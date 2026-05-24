@@ -56,7 +56,9 @@ export type DashboardData = {
     deficit_day_91: string | null
     deficit_signal: CashGapSignal | null
     has_obligations: boolean
-    days_preview: Array<{ date: string; balance: number }>
+    has_receivables: boolean
+    has_aging_detail: boolean
+    days_preview: Array<{ date: string; balance: number; receivable_collections?: number }>
     days_stress: Array<{ date: string; balance: number }>
   } | null
   obligations: Array<{
@@ -68,6 +70,16 @@ export type DashboardData = {
   explain: {
     headline: string
     reasons: ExplainReason[]
+  } | null
+  receivables: {
+    total_open: number
+    buckets: Array<{ bucket: string; amount: number; count: number }>
+    top_counterparties: Array<{
+      name: string
+      amount: number
+      bucket: string
+      due_date: string | null
+    }>
   } | null
   stale: { is_stale: boolean; hours: number | null }
   last_import_at: string | null

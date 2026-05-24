@@ -1,7 +1,6 @@
 'use client'
 
-import { DashboardData, ExplainReason, CashGapSignal } from '@/lib/api'
-import { Badge, Card, Skeleton } from '@/components/ui'
+import { DashboardData, ExplainReason, CashGapSignal } from '@/lib/api'import { Badge, Card, Skeleton } from '@/components/ui'
 import {
   LineChart,
   Line,
@@ -89,6 +88,46 @@ function CashGapCard({ signal }: { signal: CashGapSignal }) {
   )
 }
 
+const BUCKET_LABELS: Record<string, string> = {
+  '0_30':   '0–30 дней',
+  '31_60':  '31–60 дней',
+  '61_90':  '61–90 дней',
+  '90_plus': 'Просрочено',
+  'unknown': 'Без срока',
+}
+
+function ReceivablesCard({ receivables }: { receivables: NonNullable<DashboardData['receivables']> }) {
+  const sorted = [...receivables.buckets].sort((a, b) => {
+    const order = ['0_30', '31_60', '61_90', '90_plus', 'unknown']
+    return order.indexOf(a.bucket) - order.indexOf(b.bucket)
+  })
+  return (
+    <Card>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs text-neutral-400 uppercase tracking-wide font-medium">
+          Дебиторка (1С)
+        </p>
+        <p className="text-sm font-semibold text-neutral-900">
+          {formatRub(receivables.total_open)}
+        </p>
+      </div>
+      <div className="space-y-1.5">
+        {sorted.map((b) => (
+          <div key={b.bucket} className="flex items-center justify-between">
+            <p className={`text-xs ${b.bucket === '90_plus' ? 'text-alert font-medium' : 'text-neutral-600'}`}>
+              {BUCKET_LABELS[b.bucket] ?? b.bucket}
+              <span className="text-neutral-400 ml-1">({b.count})</span>
+            </p>
+            <p className={`text-sm font-medium ${b.bucket === '90_plus' ? 'text-alert' : 'text-neutral-800'}`}>
+              {formatRub(b.amount)}
+            </p>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 function ExplainBlock({ explain }: { explain: NonNullable<DashboardData['explain']> }) {
   if (!explain.reasons.length) return null
   return (
@@ -147,9 +186,9 @@ export function DashboardView({ data, isLoading, error, onUploadClick }: Props) 
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 p-6 text-center">
         <div className="text-4xl">📊</div>
-        <h2 className="text-xl font-semibold text-neutral-800">Загрузите банковскую выписку</h2>
+        <h2 className="text-xl font-semibold text-neutral-800">Загрузите данные</h2>
         <p className="text-neutral-500 text-sm max-w-xs">
-          Загрузите CSV-файл из Сбербанка или Тинькофф, чтобы увидеть финансовую сводку
+          Загрузите банковскую выписку или ОСВ из 1С, чтобы увидеть финансовую сводку
         </p>
         <button
           onClick={onUploadClick}
@@ -161,9 +200,10 @@ export function DashboardView({ data, isLoading, error, onUploadClick }: Props) 
     )
   }
 
-  const { balance, forecast, obligations, explain, stale } = data
+  const { balance, forecast, obligations, explain, stale, receivables } = data
 
   const deficitSignal = forecast?.deficit_signal ?? null
+  const hasAgingDetail = forecast?.has_aging_detail ?? false
 
   // Цвет линии графика по severity
   const lineColor =
@@ -214,7 +254,16 @@ export function DashboardView({ data, isLoading, error, onUploadClick }: Props) 
       {forecast && !forecast.has_obligations && (
         <Card className="border-warn/30 bg-warn-soft">
           <p className="text-xs text-warn font-medium">
-            Прогноз неполный — добавьте обязательства
+            Прогноз неполный — добавьте обязательства для точного прогноза
+          </p>
+        </Card>
+      )}
+
+      {/* Прогноз неполный — дебиторка без aging-детализации */}
+      {receivables && receivables.total_open > 0 && !hasAgingDetail && (
+        <Card className="border-warn/30 bg-warn-soft">
+          <p className="text-xs text-warn font-medium">
+            Загрузите ОСВ с aging-колонками (0–30, 31–60, 61–90, 90+) для учёта дебиторки в прогнозе
           </p>
         </Card>
       )}
@@ -243,10 +292,15 @@ export function DashboardView({ data, isLoading, error, onUploadClick }: Props) 
         </Card>
       )}
 
-      {/* 4. ОБЪЯСНЕНИЕ — top-3 drivers */}
+      {/* 4. ДЕБИТОРКА (1С) */}
+      {receivables && receivables.total_open > 0 && (
+        <ReceivablesCard receivables={receivables} />
+      )}
+
+      {/* 5. ОБЪЯСНЕНИЕ — top-3 drivers */}
       {explain && <ExplainBlock explain={explain} />}
 
-      {/* 5. КАССОВЫЙ ПРОГНОЗ 90 дней */}
+      {/* 6. КАССОВЫЙ ПРОГНОЗ 90 дней */}
       {chartData.length > 0 && (
         <Card>
           <p className="text-xs text-neutral-400 uppercase tracking-wide font-medium mb-3">

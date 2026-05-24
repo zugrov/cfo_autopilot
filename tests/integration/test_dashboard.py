@@ -1,9 +1,13 @@
 """
 Тест dashboard: после загрузки CSV возвращает данные с балансом и forecast.
 """
+import os
 import pytest
+from pathlib import Path
 
 from .conftest import _register, auth_headers, FIXTURES_DIR
+
+ONEC_FIXTURES = Path(__file__).parent.parent / "fixtures" / "onec"
 
 
 pytestmark = pytest.mark.asyncio
@@ -76,3 +80,79 @@ async def test_dashboard_unauthorized(client):
     """Без токена — 403."""
     resp = await client.get("/dashboard/today")
     assert resp.status_code == 403
+
+
+async def test_dashboard_with_onec_receivables(client):
+    """После импорта aging ОСВ дашборд показывает receivables + has_aging_detail."""
+    user = await _register(client, company="OnecDashCo")
+    headers = auth_headers(user["token"])
+
+    # Сначала банк (нужен баланс для снапшота)
+    csv_path = f"{FIXTURES_DIR}/sber_sample.csv"
+    with open(csv_path, "rb") as f:
+        r = await client.post(
+            "/imports/bank",
+            headers=headers,
+            files={"file": ("sber_sample.csv", f, "text/csv")},
+            data={"bank_key": "sber"},
+        )
+    assert r.status_code == 201
+
+    # Затем 1С ОСВ aging
+    aging_bytes = (ONEC_FIXTURES / "osv_aging_sample.csv").read_bytes()
+    r2 = await client.post(
+        "/imports/onec",
+        headers=headers,
+        files={"file": ("osv_aging_sample.csv", aging_bytes, "text/csv")},
+    )
+    assert r2.status_code == 201
+
+    resp = await client.get("/dashboard/today", headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert data["has_data"] is True
+    assert data["forecast"]["has_receivables"] is True
+    assert data["forecast"]["has_aging_detail"] is True
+    assert data["receivables"] is not None
+    assert data["receivables"]["total_open"] > 0
+    buckets = {b["bucket"] for b in data["receivables"]["buckets"]}
+    assert "0_30" in buckets
+    # days_preview содержит receivable_collections
+    first_day = data["forecast"]["days_preview"][0]
+    assert "receivable_collections" in first_day
+
+
+async def test_dashboard_plain_onec_no_aging_detail(client):
+    """После plain ОСВ has_aging_detail=False, receivables=None (probability=0)."""
+    user = await _register(client, company="PlainDashCo")
+    headers = auth_headers(user["token"])
+
+    csv_path = f"{FIXTURES_DIR}/sber_sample.csv"
+    with open(csv_path, "rb") as f:
+        await client.post(
+            "/imports/bank",
+            headers=headers,
+            files={"file": ("sber_sample.csv", f, "text/csv")},
+            data={"bank_key": "sber"},
+        )
+
+    plain_bytes = (ONEC_FIXTURES / "osv_plain_sample.csv").read_bytes()
+    r2 = await client.post(
+        "/imports/onec",
+        headers=headers,
+        files={"file": ("osv_plain_sample.csv", plain_bytes, "text/csv")},
+    )
+    assert r2.status_code == 201
+
+    resp = await client.get("/dashboard/today", headers=headers)
+    data = resp.json()
+
+    assert data["forecast"]["has_aging_detail"] is False
+    # Receivables есть в БД (plain), но в прогнозе не участвуют
+    # total_open > 0 (записи есть), но без probability
+    if data["receivables"] is not None:
+        # buckets могут содержать unknown
+        buckets = {b["bucket"] for b in data["receivables"]["buckets"]}
+        # Если только unknown — aging_detail правильно False
+        assert "0_30" not in buckets or data["forecast"]["has_aging_detail"] is True

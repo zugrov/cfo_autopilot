@@ -116,6 +116,54 @@ async def dashboard_today(
         else None
     )
 
+    # Сводка дебиторки по aging-корзинам
+    rcv_buckets_row = await db.execute(
+        text(
+            "SELECT aging_bucket, SUM(amount) AS total, COUNT(*) AS cnt "
+            "FROM receivable "
+            "WHERE company_id = :cid AND status IN ('open', 'overdue') "
+            "  AND source = 'onec_osv' "
+            "GROUP BY aging_bucket"
+        ),
+        {"cid": cid},
+    )
+    buckets_raw = rcv_buckets_row.fetchall()
+
+    rcv_top_row = await db.execute(
+        text(
+            "SELECT c.name, r.amount, r.aging_bucket, r.due_date "
+            "FROM receivable r "
+            "LEFT JOIN counterparty c ON r.counterparty_id = c.id "
+            "WHERE r.company_id = :cid AND r.status IN ('open', 'overdue') "
+            "  AND r.source = 'onec_osv' "
+            "ORDER BY r.amount DESC LIMIT 5"
+        ),
+        {"cid": cid},
+    )
+    top_raw = rcv_top_row.fetchall()
+
+    total_open = sum(float(r[1]) for r in buckets_raw)
+    receivables_summary = (
+        {
+            "total_open": total_open,
+            "buckets": [
+                {"bucket": r[0], "amount": float(r[1]), "count": int(r[2])}
+                for r in buckets_raw
+            ],
+            "top_counterparties": [
+                {
+                    "name": r[0] or "—",
+                    "amount": float(r[1]),
+                    "bucket": r[2],
+                    "due_date": r[3].isoformat() if r[3] else None,
+                }
+                for r in top_raw
+            ],
+        }
+        if buckets_raw
+        else None
+    )
+
     return {
         "has_data": True,
         "balance": balance,
@@ -126,7 +174,16 @@ async def dashboard_today(
             "deficit_day_91": forecast_json.get("deficit_day_91"),
             "deficit_signal": deficit_signal,
             "has_obligations": forecast_json.get("has_obligations", False),
-            "days_preview": forecast_json.get("days", []),
+            "has_receivables": forecast_json.get("has_receivables", False),
+            "has_aging_detail": forecast_json.get("has_aging_detail", False),
+            "days_preview": [
+                {
+                    "date": d["date"],
+                    "balance": d["balance"],
+                    "receivable_collections": d.get("receivable_collections", 0),
+                }
+                for d in forecast_json.get("days", [])
+            ],
             "days_stress": forecast_json.get("days_stress", []),
         },
         "obligations": obligations,
@@ -142,6 +199,7 @@ async def dashboard_today(
                 for r in explain.reasons
             ],
         },
+        "receivables": receivables_summary,
         "stale": {"is_stale": is_stale, "hours": stale_hours},
         "last_import_at": last_import_at.isoformat() if last_import_at else None,
     }
