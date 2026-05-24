@@ -1,26 +1,29 @@
 """
 OneCFileAdapter — парсер 1С файлов выгрузки.
 
-Sprint 3: поддержка ОСВ (оборотно-сальдовая ведомость) в CSV формате.
-Два формата:
+Поддерживаемые CSV-форматы:
   - aging: колонки по корзинам (0-30, 31-60, 61-90, 90+)
+  - account62_detail: детализация счёта 62 (дата документа + сумма)
   - plain: только контрагент + итоговое дебетовое сальдо
 """
 from __future__ import annotations
 
 import csv
 import io
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-import chardet
-
-from app.services.ingestion.bank_csv_parser import _detect_encoding, _normalize_amount
+from app.services.ingestion.bank_csv_parser import (
+    _detect_encoding,
+    _normalize_amount,
+    _parse_date_ru,
+)
 
 # Aging bucket canonical names
 AgingBucket = Literal["0_30", "31_60", "61_90", "90_plus", "unknown"]
+FormatType = Literal["aging", "plain", "account62_detail"]
 
 # Дефолтные вероятности и offsets (дней) по корзинам
 BUCKET_DEFAULTS: dict[str, tuple[float, int, str]] = {
@@ -30,6 +33,19 @@ BUCKET_DEFAULTS: dict[str, tuple[float, int, str]] = {
     "90_plus": (0.40, 105, "overdue"),
     "unknown": (0.00, 0,   "open"),   # не участвует в прогнозе
 }
+
+_SKIP_COUNTERPARTY = {"итого", "всего", "total"}
+
+
+def bucket_for_age_days(age_days: int) -> AgingBucket:
+    """Возраст долга в днях → aging-корзина."""
+    if age_days <= 30:
+        return "0_30"
+    if age_days <= 60:
+        return "31_60"
+    if age_days <= 90:
+        return "61_90"
+    return "90_plus"
 
 
 @dataclass
@@ -46,7 +62,7 @@ class OneCOsvEntry:
 class OneCOsvParseResult:
     entries: list[OneCOsvEntry]
     errors: list[dict]
-    format: Literal["aging", "plain"]
+    format: FormatType
     as_of_date: date
 
 
@@ -59,7 +75,6 @@ _AGING_PATTERNS: list[tuple[str, AgingBucket]] = [
     ("1-30",     "0_30"),
     ("31-60",    "31_60"),
     ("31–60",    "31_60"),
-    ("31-60",    "31_60"),
     ("61-90",    "61_90"),
     ("61–90",    "61_90"),
     ("90+",      "90_plus"),
@@ -74,6 +89,9 @@ _DEBIT_COLS = {
     "дебет", "дебет начало", "сальдо дебет",
     "сальдо дебетовое", "остаток дебет", "кон.дебет",
 }
+_DOC_DATE_COLS = {"дата документа", "дата", "дата операции", "дата реализации"}
+_DUE_DATE_COLS = {"срок оплаты", "дата оплаты", "оплатить до"}
+_AMOUNT_COLS = {"сумма", "остаток", "сальдо", "долг", "дебет"}
 
 
 def _find_col(headers_lower: dict[str, str], candidates: set[str]) -> str | None:
@@ -94,13 +112,28 @@ def _detect_aging_cols(headers_lower: dict[str, str]) -> dict[str, AgingBucket]:
     return result
 
 
+def _compute_age_bucket(
+    as_of: date,
+    doc_date: date | None,
+    due_date: date | None,
+) -> AgingBucket:
+    if due_date is not None:
+        age_days = (as_of - due_date).days
+    elif doc_date is not None:
+        age_days = (as_of - doc_date).days
+    else:
+        return "unknown"
+    return bucket_for_age_days(max(0, age_days))
+
+
 class OneCOsvCsvParser:
     """
-    Парсер CSV-экспорта Оборотно-Сальдовой Ведомости из 1С.
-    Возвращает OneCOsvParseResult с дебиторкой (счёт 62).
+    Парсер CSV-экспорта из 1С (ОСВ и детализация счёта 62).
+    Возвращает OneCOsvParseResult с дебиторкой.
 
-    Формат aging: строки с колонками по корзинам дней → вероятностный прогноз.
-    Формат plain: итоговое дебетовое сальдо → импорт без прогноза (bucket=unknown).
+    Формат aging: колонки по корзинам → вероятностный прогноз.
+    Формат account62_detail: дата документа + сумма → aging из возраста долга.
+    Формат plain: итоговое дебетовое сальдо → bucket=unknown.
     """
 
     def parse(self, raw_bytes: bytes) -> OneCOsvParseResult:
@@ -114,10 +147,21 @@ class OneCOsvCsvParser:
         counterparty_col = _find_col(headers_lower, _COUNTERPARTY_COLS)
         inn_col = _find_col(headers_lower, _INN_COLS)
         debit_col = _find_col(headers_lower, _DEBIT_COLS)
+        doc_date_col = _find_col(headers_lower, _DOC_DATE_COLS)
+        due_date_col = _find_col(headers_lower, _DUE_DATE_COLS)
+        amount_col = _find_col(headers_lower, _AMOUNT_COLS)
         aging_cols = _detect_aging_cols(headers_lower)
 
-        is_aging = bool(aging_cols)
-        fmt: Literal["aging", "plain"] = "aging" if is_aging else "plain"
+        as_of = date.today()
+
+        if aging_cols:
+            fmt: FormatType = "aging"
+        elif doc_date_col and amount_col:
+            fmt = "account62_detail"
+        elif debit_col:
+            fmt = "plain"
+        else:
+            fmt = "plain"
 
         entries: list[OneCOsvEntry] = []
         errors: list[dict] = []
@@ -127,13 +171,13 @@ class OneCOsvCsvParser:
                 if not counterparty_col:
                     continue
                 counterparty = row.get(counterparty_col, "").strip()
-                if not counterparty:
+                if not counterparty or counterparty.lower() in _SKIP_COUNTERPARTY:
                     continue
 
                 inn = row.get(inn_col, "").strip() if inn_col else None
                 inn = inn if inn else None
 
-                if is_aging:
+                if fmt == "aging":
                     for col, bucket in aging_cols.items():
                         raw = row.get(col, "0").strip()
                         if not raw or raw == "0":
@@ -148,6 +192,33 @@ class OneCOsvCsvParser:
                                     aging_bucket=bucket,
                                 )
                             )
+                elif fmt == "account62_detail":
+                    amount_raw = row.get(amount_col, "0").strip() if amount_col else "0"
+                    if not amount_raw or amount_raw == "0":
+                        continue
+                    amount = _normalize_amount(amount_raw)
+                    if amount <= 0:
+                        continue
+
+                    doc_date: date | None = None
+                    due_date: date | None = None
+                    doc_raw = row.get(doc_date_col, "").strip() if doc_date_col else ""
+                    if doc_raw:
+                        doc_date = _parse_date_ru(doc_raw)
+                    if due_date_col:
+                        due_raw = row.get(due_date_col, "").strip()
+                        if due_raw:
+                            due_date = _parse_date_ru(due_raw)
+
+                    bucket = _compute_age_bucket(as_of, doc_date, due_date)
+                    entries.append(
+                        OneCOsvEntry(
+                            counterparty=counterparty,
+                            inn=inn,
+                            amount=amount,
+                            aging_bucket=bucket,
+                        )
+                    )
                 else:
                     if not debit_col:
                         continue
@@ -171,5 +242,5 @@ class OneCOsvCsvParser:
             entries=entries,
             errors=errors,
             format=fmt,
-            as_of_date=date.today(),
+            as_of_date=as_of,
         )

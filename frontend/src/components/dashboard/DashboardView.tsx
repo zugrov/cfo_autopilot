@@ -263,7 +263,7 @@ export function DashboardView({ data, isLoading, error, onUploadClick }: Props) 
       {receivables && receivables.total_open > 0 && !hasAgingDetail && (
         <Card className="border-warn/30 bg-warn-soft">
           <p className="text-xs text-warn font-medium">
-            Загрузите ОСВ с aging-колонками (0–30, 31–60, 61–90, 90+) для учёта дебиторки в прогнозе
+            Загрузите ОСВ с aging-колонками или детализацию счёта 62 для учёта дебиторки в прогнозе
           </p>
         </Card>
       )}

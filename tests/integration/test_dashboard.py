@@ -156,3 +156,38 @@ async def test_dashboard_plain_onec_no_aging_detail(client):
         buckets = {b["bucket"] for b in data["receivables"]["buckets"]}
         # Если только unknown — aging_detail правильно False
         assert "0_30" not in buckets or data["forecast"]["has_aging_detail"] is True
+
+
+async def test_dashboard_with_account62_detail(client):
+    """После импорта детализации счёта 62 дашборд показывает aging без unknown."""
+    user = await _register(client, company="Acct62DashCo")
+    headers = auth_headers(user["token"])
+
+    csv_path = f"{FIXTURES_DIR}/sber_sample.csv"
+    with open(csv_path, "rb") as f:
+        r = await client.post(
+            "/imports/bank",
+            headers=headers,
+            files={"file": ("sber_sample.csv", f, "text/csv")},
+            data={"bank_key": "sber"},
+        )
+    assert r.status_code == 201
+
+    acct62_bytes = (ONEC_FIXTURES / "account62_detail_sample.csv").read_bytes()
+    r2 = await client.post(
+        "/imports/onec",
+        headers=headers,
+        files={"file": ("account62_detail_sample.csv", acct62_bytes, "text/csv")},
+    )
+    assert r2.status_code == 201
+    assert r2.json()["meta"]["format"] == "account62_detail"
+
+    resp = await client.get("/dashboard/today", headers=headers)
+    data = resp.json()
+
+    assert data["forecast"]["has_receivables"] is True
+    assert data["forecast"]["has_aging_detail"] is True
+    assert data["receivables"] is not None
+    buckets = {b["bucket"] for b in data["receivables"]["buckets"]}
+    assert "unknown" not in buckets
+    assert len(buckets) >= 2

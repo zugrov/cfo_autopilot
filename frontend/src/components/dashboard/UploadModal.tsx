@@ -111,8 +111,8 @@ export function UploadModal({ onSuccess, onClose }: Props) {
 
           {sourceType === 'onec' && (
             <p className="text-xs text-neutral-500 bg-neutral-50 rounded-lg px-3 py-2">
-              Оборотно-сальдовая ведомость (CSV, разделитель&nbsp;«;»). Для учёта в прогнозе нужны
-              aging-колонки: 0–30, 31–60, 61–90, 90+.
+              Оборотно-сальдовая ведомость или детализация счёта 62 (CSV, разделитель «;»).
+              Для прогноза: aging-колонки (0–30, 31–60, 61–90, 90+) или файл с датой документа и суммой.
             </p>
           )}
 

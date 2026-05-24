@@ -86,3 +86,66 @@ class TestOneCOsvParser:
         result = OneCOsvCsvParser().parse(b"")
         assert result.entries == []
         assert result.format == "plain"
+
+
+class TestAccount62DetailParser:
+    def test_account62_format_detected(self):
+        from app.services.ingestion.onec_file_adapter import OneCOsvCsvParser
+        result = OneCOsvCsvParser().parse(_read("account62_detail_sample.csv"))
+        assert result.format == "account62_detail"
+
+    def test_account62_buckets_computed(self):
+        from app.services.ingestion.onec_file_adapter import (
+            OneCOsvCsvParser,
+            bucket_for_age_days,
+        )
+        from app.services.ingestion.bank_csv_parser import _parse_date_ru
+
+        result = OneCOsvCsvParser().parse(_read("account62_detail_sample.csv"))
+        as_of = result.as_of_date
+        expected = {
+            "ООО Альфа": bucket_for_age_days(
+                max(0, (as_of - _parse_date_ru("20.05.2026")).days)
+            ),
+            "ИП Бетов": bucket_for_age_days(
+                max(0, (as_of - _parse_date_ru("15.04.2026")).days)
+            ),
+            "ЗАО Гамма": bucket_for_age_days(
+                max(0, (as_of - _parse_date_ru("01.03.2026")).days)
+            ),
+            "ООО Дельта": bucket_for_age_days(
+                max(0, (as_of - _parse_date_ru("01.11.2025")).days)
+            ),
+        }
+        for entry in result.entries:
+            assert entry.aging_bucket == expected[entry.counterparty]
+            assert entry.aging_bucket != "unknown"
+
+    def test_account62_due_date_priority(self):
+        from app.services.ingestion.onec_file_adapter import OneCOsvCsvParser
+        csv = (
+            "Контрагент;Дата документа;Сумма;Срок оплаты\n"
+            "ООО Тест;01.01.2020;10000;01.06.2026\n"
+        ).encode("utf-8")
+        result = OneCOsvCsvParser().parse(csv)
+        entry = result.entries[0]
+        # due_date 01.06.2026 ближе → 0_30, а не 90_plus по doc_date 2020
+        assert entry.aging_bucket == "0_30"
+
+    def test_account62_skips_totals_row(self):
+        from app.services.ingestion.onec_file_adapter import OneCOsvCsvParser
+        result = OneCOsvCsvParser().parse(_read("account62_detail_sample.csv"))
+        names = [e.counterparty for e in result.entries]
+        assert "Итого" not in names
+        assert len(result.entries) == 4
+
+    def test_bucket_for_age_days_boundaries(self):
+        from app.services.ingestion.onec_file_adapter import bucket_for_age_days
+        assert bucket_for_age_days(0) == "0_30"
+        assert bucket_for_age_days(30) == "0_30"
+        assert bucket_for_age_days(31) == "31_60"
+        assert bucket_for_age_days(60) == "31_60"
+        assert bucket_for_age_days(61) == "61_90"
+        assert bucket_for_age_days(90) == "61_90"
+        assert bucket_for_age_days(91) == "90_plus"
+

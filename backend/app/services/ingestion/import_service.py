@@ -300,7 +300,7 @@ class ImportService:
             },
         )
 
-        forecast_ready = parse_result.format == "aging"
+        forecast_ready = parse_result.format in ("aging", "account62_detail")
         meta = {
             "format": parse_result.format,
             "receivables_imported": receivables_imported,

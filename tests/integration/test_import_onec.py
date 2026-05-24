@@ -128,3 +128,24 @@ async def test_upload_onec_tenant_isolation(client: AsyncClient):
         "/dashboard", headers=auth_headers(user_b["token"])
     )
     assert dash_b.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_upload_onec_account62_detail(client: AsyncClient):
+    """Детализация счёта 62 импортируется, forecast_ready=True."""
+    from tests.integration.conftest import _register, auth_headers
+
+    user = await _register(client, company="OnecAcct62Co")
+    headers = auth_headers(user["token"])
+
+    csv_bytes = (ONEC_FIXTURES / "account62_detail_sample.csv").read_bytes()
+    resp = await client.post(
+        "/imports/onec",
+        headers=headers,
+        files={"file": ("account62_detail_sample.csv", csv_bytes, "text/csv")},
+    )
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    assert data["meta"]["format"] == "account62_detail"
+    assert data["meta"]["forecast_ready"] is True
+    assert data["imported_count"] == 4
