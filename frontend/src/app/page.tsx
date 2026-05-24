@@ -5,6 +5,7 @@ import { api, DashboardData } from '@/lib/api'
 import { DashboardView } from '@/components/dashboard/DashboardView'
 import { UploadModal } from '@/components/dashboard/UploadModal'
 import { ObligationsPanel } from '@/components/dashboard/ObligationsPanel'
+import { AiChatPanel } from '@/components/dashboard/AiChatPanel'
 
 type AuthMode = 'login' | 'register'
 
@@ -208,6 +209,7 @@ export default function HomePage() {
   const [showUpload, setShowUpload] = useState(false)
   const [showObligations, setShowObligations] = useState(false)
   const [showTelegram, setShowTelegram] = useState(false)
+  const [showAiChat, setShowAiChat] = useState(false)
 
   useEffect(() => {
     const stored = localStorage.getItem('access_token')
@@ -260,6 +262,12 @@ export default function HomePage() {
             Обязательства
           </button>
           <button
+            onClick={() => setShowAiChat(true)}
+            className="text-xs font-medium text-trust hover:text-trust-dark transition-colors"
+          >
+            Спросить
+          </button>
+          <button
             onClick={() => setShowUpload(true)}
             className="text-xs font-medium text-trust hover:text-trust-dark transition-colors"
           >
@@ -306,6 +314,10 @@ export default function HomePage() {
 
       {showTelegram && (
         <TelegramModal onClose={() => setShowTelegram(false)} />
+      )}
+
+      {showAiChat && (
+        <AiChatPanel onClose={() => setShowAiChat(false)} />
       )}
     </>
   )
