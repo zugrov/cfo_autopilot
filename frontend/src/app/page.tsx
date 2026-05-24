@@ -9,6 +9,7 @@ import { AiChatPanel } from '@/components/dashboard/AiChatPanel'
 import { TransactionsPanel } from '@/components/dashboard/TransactionsPanel'
 import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard'
 import { OnboardingBanner } from '@/components/onboarding/OnboardingBanner'
+import { TeamPanel } from '@/components/team/TeamPanel'
 
 type AuthMode = 'login' | 'register'
 
@@ -215,6 +216,7 @@ export default function HomePage() {
   const [showTelegram, setShowTelegram] = useState(false)
   const [showAiChat, setShowAiChat] = useState(false)
   const [showTransactions, setShowTransactions] = useState(false)
+  const [showTeam, setShowTeam] = useState(false)
   const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null)
 
   const canImport = user?.role !== 'viewer'
@@ -330,6 +332,14 @@ export default function HomePage() {
           )}
           {isOwner && (
           <button
+            onClick={() => setShowTeam(true)}
+            className="text-xs font-medium text-neutral-600 hover:text-neutral-900 transition-colors"
+          >
+            Команда
+          </button>
+          )}
+          {isOwner && (
+          <button
             onClick={() => setShowTelegram(true)}
             className="text-xs text-neutral-400 hover:text-neutral-600 transition-colors"
             title="Настроить Telegram-дайджест"
@@ -393,6 +403,10 @@ export default function HomePage() {
 
       {showAiChat && (
         <AiChatPanel onClose={() => setShowAiChat(false)} />
+      )}
+
+      {showTeam && (
+        <TeamPanel onClose={() => setShowTeam(false)} />
       )}
     </>
   )

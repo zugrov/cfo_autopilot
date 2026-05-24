@@ -135,6 +135,15 @@ export type TransactionItem = {
   purpose: string | null
 }
 
+export type TeamMember = {
+  id: string
+  email: string
+  role: 'owner' | 'accountant' | 'viewer'
+  is_active: boolean
+  created_at: string | null
+  telegram_connected: boolean
+}
+
 export const api = {
   getDashboard: () => apiFetch<DashboardData>('/dashboard/today'),
 
@@ -223,5 +232,19 @@ export const api = {
     apiFetch<{ answer: string; provider: string; cached: boolean }>('/ai/chat', {
       method: 'POST',
       body: JSON.stringify({ question }),
+    }),
+
+  listUsers: () => apiFetch<{ users: TeamMember[] }>('/users'),
+
+  inviteUser: (email: string, role: 'accountant' | 'viewer') =>
+    apiFetch<{ id: string; email: string; role: string; is_active: boolean }>('/users', {
+      method: 'POST',
+      body: JSON.stringify({ email, role }),
+    }),
+
+  updateUser: (id: string, patch: { role?: string; is_active?: boolean }) =>
+    apiFetch<{ id: string; email: string; role: string; is_active: boolean }>(`/users/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
     }),
 }
