@@ -101,6 +101,23 @@ curl http://localhost:8000/dashboard/today \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+## Pilot pack
+
+Перед пилотом с клиентом:
+
+- **Чеклист деплоя и dogfood:** [docs/PILOT.md](docs/PILOT.md)
+- **Automated smoke (CI):**
+  ```bash
+  cd backend
+  poetry run pytest ../tests/integration/test_pilot_smoke.py -v
+  ```
+- **Smoke живого API** (backend должен быть запущен):
+  ```bash
+  chmod +x scripts/pilot-smoke.sh
+  ./scripts/pilot-smoke.sh
+  # staging: BASE_URL=https://api.example.com ./scripts/pilot-smoke.sh
+  ```
+
 ## Тесты
 
 ```bash

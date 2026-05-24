@@ -125,7 +125,7 @@ async def test_upload_onec_tenant_isolation(client: AsyncClient):
     assert r_b.status_code == 201
     # Дашборд компании B показывает данные только от B
     dash_b = await client.get(
-        "/dashboard", headers=auth_headers(user_b["token"])
+        "/dashboard/today", headers=auth_headers(user_b["token"])
     )
     assert dash_b.status_code == 200
 
