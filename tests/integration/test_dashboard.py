@@ -246,3 +246,28 @@ async def test_dashboard_with_account62_detail(client):
     buckets = {b["bucket"] for b in data["receivables"]["buckets"]}
     assert "unknown" not in buckets
     assert len(buckets) >= 2
+
+
+async def test_dashboard_transactions_after_import(client):
+    """После импорта sber GET /dashboard/transactions возвращает список операций."""
+    user = await _register(client, company="TxnListCo")
+    headers = auth_headers(user["token"])
+
+    csv_path = f"{FIXTURES_DIR}/sber_sample.csv"
+    with open(csv_path, "rb") as f:
+        r = await client.post(
+            "/imports/bank",
+            headers=headers,
+            files={"file": ("sber_sample.csv", f, "text/csv")},
+            data={"bank_key": "sber"},
+        )
+    assert r.status_code == 201
+
+    resp = await client.get("/dashboard/transactions", headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["transactions"]) > 0
+    tx = data["transactions"][0]
+    assert "date" in tx
+    assert "amount" in tx
+    assert "direction" in tx

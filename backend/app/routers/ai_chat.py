@@ -13,7 +13,7 @@ from sqlalchemy import text
 from pydantic import BaseModel
 
 from app.core.database import get_db
-from app.core.auth import CurrentUser
+from app.core.rbac import ReadUser
 from app.services.llm.adapter import ask_llm, redact_pii
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -32,7 +32,7 @@ class ChatResponse(BaseModel):
 @router.post("/chat", response_model=ChatResponse, summary="AI-ответ на финансовый вопрос")
 async def ai_chat(
     body: ChatRequest,
-    current_user: CurrentUser,
+    current_user: ReadUser,
     db: AsyncSession = Depends(get_db),
 ) -> ChatResponse:
     cid = current_user.company_id

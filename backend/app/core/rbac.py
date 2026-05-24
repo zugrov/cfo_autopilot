@@ -9,8 +9,11 @@ RBAC — проверка прав доступа по ролям.
 """
 from __future__ import annotations
 
-from fastapi import HTTPException, status
+from typing import Annotated
 
+from fastapi import Depends, HTTPException, status
+
+from app.core.auth import get_current_user
 from app.models import User
 
 ROLE_HIERARCHY = {"owner": 3, "accountant": 2, "viewer": 1}
@@ -25,7 +28,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
 def require_permission(permission: str):
     """Dependency-фабрика для проверки прав доступа."""
 
-    def _check(current_user: User) -> User:
+    def _check(current_user: Annotated[User, Depends(get_current_user)]) -> User:
         allowed = ROLE_PERMISSIONS.get(current_user.role, set())
         if permission not in allowed:
             raise HTTPException(
@@ -40,7 +43,7 @@ def require_permission(permission: str):
 def require_role(min_role: str):
     """Dependency: требует роль не ниже указанной."""
 
-    def _check(current_user: User) -> User:
+    def _check(current_user: Annotated[User, Depends(get_current_user)]) -> User:
         user_level = ROLE_HIERARCHY.get(current_user.role, 0)
         required_level = ROLE_HIERARCHY.get(min_role, 99)
         if user_level < required_level:
@@ -51,3 +54,9 @@ def require_role(min_role: str):
         return current_user
 
     return _check
+
+
+ReadUser = Annotated[User, Depends(require_permission("read"))]
+ImportUser = Annotated[User, Depends(require_permission("import"))]
+ObligationUser = Annotated[User, Depends(require_permission("create_obligation"))]
+OwnerUser = Annotated[User, Depends(require_role("owner"))]

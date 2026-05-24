@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { api, DashboardData } from '@/lib/api'
+import { api, DashboardData, UserMe } from '@/lib/api'
 import { DashboardView } from '@/components/dashboard/DashboardView'
 import { UploadModal } from '@/components/dashboard/UploadModal'
 import { ObligationsPanel } from '@/components/dashboard/ObligationsPanel'
 import { AiChatPanel } from '@/components/dashboard/AiChatPanel'
+import { TransactionsPanel } from '@/components/dashboard/TransactionsPanel'
 
 type AuthMode = 'login' | 'register'
 
@@ -203,6 +204,7 @@ function TelegramModal({ onClose }: { onClose: () => void }) {
 
 export default function HomePage() {
   const [token, setToken] = useState<string | null>(null)
+  const [user, setUser] = useState<UserMe | null>(null)
   const [data, setData] = useState<DashboardData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -210,10 +212,24 @@ export default function HomePage() {
   const [showObligations, setShowObligations] = useState(false)
   const [showTelegram, setShowTelegram] = useState(false)
   const [showAiChat, setShowAiChat] = useState(false)
+  const [showTransactions, setShowTransactions] = useState(false)
+
+  const canImport = user?.role !== 'viewer'
+  const canEditObligations = user?.role !== 'viewer'
+  const isOwner = user?.role === 'owner'
 
   useEffect(() => {
     const stored = localStorage.getItem('access_token')
     setToken(stored)
+  }, [])
+
+  const fetchUser = useCallback(async () => {
+    try {
+      const me = await api.getMe()
+      setUser(me)
+    } catch {
+      setUser(null)
+    }
   }, [])
 
   const fetchDashboard = useCallback(async () => {
@@ -236,13 +252,15 @@ export default function HomePage() {
 
   useEffect(() => {
     if (token) {
+      fetchUser()
       fetchDashboard()
     }
-  }, [token, fetchDashboard])
+  }, [token, fetchUser, fetchDashboard])
 
   const handleLogout = () => {
     localStorage.removeItem('access_token')
     setToken(null)
+    setUser(null)
     setData(null)
   }
 
@@ -256,6 +274,12 @@ export default function HomePage() {
         <h1 className="text-base font-semibold text-neutral-900">Финансовый автопилот</h1>
         <div className="flex items-center gap-3">
           <button
+            onClick={() => setShowTransactions(true)}
+            className="text-xs font-medium text-neutral-600 hover:text-neutral-900 transition-colors"
+          >
+            Операции
+          </button>
+          <button
             onClick={() => setShowObligations(true)}
             className="text-xs font-medium text-neutral-600 hover:text-neutral-900 transition-colors"
           >
@@ -267,12 +291,15 @@ export default function HomePage() {
           >
             Спросить
           </button>
+          {canImport && (
           <button
             onClick={() => setShowUpload(true)}
             className="text-xs font-medium text-trust hover:text-trust-dark transition-colors"
           >
             + Выписка
           </button>
+          )}
+          {isOwner && (
           <button
             onClick={() => setShowTelegram(true)}
             className="text-xs text-neutral-400 hover:text-neutral-600 transition-colors"
@@ -280,6 +307,7 @@ export default function HomePage() {
           >
             Telegram
           </button>
+          )}
           <button
             onClick={handleLogout}
             className="text-xs text-neutral-400 hover:text-neutral-600 transition-colors"
@@ -294,7 +322,9 @@ export default function HomePage() {
           data={data}
           isLoading={isLoading}
           error={error}
-          onUploadClick={() => setShowUpload(true)}
+          onUploadClick={() => canImport && setShowUpload(true)}
+          onTransactionsClick={() => setShowTransactions(true)}
+          canImport={canImport}
         />
       </main>
 
@@ -309,7 +339,12 @@ export default function HomePage() {
         <ObligationsPanel
           onClose={() => setShowObligations(false)}
           onRefreshDashboard={fetchDashboard}
+          canEdit={canEditObligations}
         />
+      )}
+
+      {showTransactions && (
+        <TransactionsPanel onClose={() => setShowTransactions(false)} />
       )}
 
       {showTelegram && (

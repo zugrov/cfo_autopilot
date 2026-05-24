@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from app.core.database import get_db
-from app.core.auth import CurrentUser
+from app.core.rbac import ReadUser
 from app.services.explain.engine import explain_balance_change
 from app.services.signals.cash_gap import compute_cash_gap_signal
 from app.services.reconciliation.engine import compute_reconciliation
@@ -23,7 +23,7 @@ _RECON_LOOKBACK_DAYS = 90
 
 @router.get("/today", summary="Главный экран: остаток + прогноз + сигналы")
 async def dashboard_today(
-    current_user: CurrentUser,
+    current_user: ReadUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     cid = current_user.company_id
@@ -292,7 +292,7 @@ async def _build_reconciliation(
 
 @router.get("/transactions", summary="Список транзакций")
 async def list_transactions(
-    current_user: CurrentUser,
+    current_user: ReadUser,
     db: AsyncSession = Depends(get_db),
     limit: int = 50,
     offset: int = 0,

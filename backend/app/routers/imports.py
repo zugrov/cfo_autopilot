@@ -11,7 +11,7 @@ from sqlalchemy import text
 from pydantic import BaseModel
 
 from app.core.database import get_db
-from app.core.auth import CurrentUser
+from app.core.rbac import ReadUser, ImportUser
 from app.services.ingestion.import_service import ImportService
 from app.services.ingestion.parser_registry import supported_banks
 
@@ -43,7 +43,7 @@ async def list_banks() -> dict:
     summary="Загрузить банковскую выписку (CSV)",
 )
 async def upload_bank_csv(
-    current_user: CurrentUser,
+    current_user: ImportUser,
     db: AsyncSession = Depends(get_db),
     file: UploadFile = File(...),
     bank_key: str = Form(..., description="Ключ банка: sber, tinkoff, vtb, alfa"),
@@ -110,7 +110,7 @@ async def upload_bank_csv(
     summary="Загрузить выгрузку 1С ОСВ (CSV)",
 )
 async def upload_onec_osv(
-    current_user: CurrentUser,
+    current_user: ImportUser,
     db: AsyncSession = Depends(get_db),
     file: UploadFile = File(...),
 ) -> ImportBatchResponse:
@@ -165,7 +165,7 @@ async def upload_onec_osv(
 
 @router.get("/history", summary="История загрузок")
 async def import_history(
-    current_user: CurrentUser,
+    current_user: ReadUser,
     db: AsyncSession = Depends(get_db),
     limit: int = 20,
 ) -> dict:

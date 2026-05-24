@@ -17,6 +17,8 @@ type Props = {
   isLoading: boolean
   error: string | null
   onUploadClick: () => void
+  onTransactionsClick?: () => void
+  canImport?: boolean
 }
 
 function formatRub(amount: number): string {
@@ -174,13 +176,30 @@ function ReconciliationCard({
   )
 }
 
-function ExplainBlock({ explain }: { explain: NonNullable<DashboardData['explain']> }) {
+function ExplainBlock({
+  explain,
+  onTransactionsClick,
+}: {
+  explain: NonNullable<DashboardData['explain']>
+  onTransactionsClick?: () => void
+}) {
   if (!explain.reasons.length) return null
   return (
     <Card>
-      <p className="text-xs text-neutral-400 uppercase tracking-wide font-medium mb-2">
-        Объяснение
-      </p>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs text-neutral-400 uppercase tracking-wide font-medium">
+          Объяснение
+        </p>
+        {onTransactionsClick && (
+          <button
+            type="button"
+            onClick={onTransactionsClick}
+            className="text-xs text-trust hover:text-trust-dark transition-colors"
+          >
+            Все операции →
+          </button>
+        )}
+      </div>
       <p className="text-xs text-neutral-500 mb-3">{explain.headline}</p>
       <div className="space-y-2">
         {explain.reasons.map((r: ExplainReason, i: number) => (
@@ -202,7 +221,14 @@ function ExplainBlock({ explain }: { explain: NonNullable<DashboardData['explain
   )
 }
 
-export function DashboardView({ data, isLoading, error, onUploadClick }: Props) {
+export function DashboardView({
+  data,
+  isLoading,
+  error,
+  onUploadClick,
+  onTransactionsClick,
+  canImport = true,
+}: Props) {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3 text-neutral-500">
@@ -236,12 +262,14 @@ export function DashboardView({ data, isLoading, error, onUploadClick }: Props) 
         <p className="text-neutral-500 text-sm max-w-xs">
           Загрузите банковскую выписку или ОСВ из 1С, чтобы увидеть финансовую сводку
         </p>
+        {canImport && (
         <button
           onClick={onUploadClick}
           className="bg-trust text-white font-medium px-6 py-3 rounded-lg hover:bg-trust-dark transition-colors"
         >
           Загрузить выписку
         </button>
+        )}
       </div>
     )
   }
@@ -348,7 +376,9 @@ export function DashboardView({ data, isLoading, error, onUploadClick }: Props) 
       )}
 
       {/* 5. ОБЪЯСНЕНИЕ — top-3 drivers */}
-      {explain && <ExplainBlock explain={explain} />}
+      {explain && (
+        <ExplainBlock explain={explain} onTransactionsClick={onTransactionsClick} />
+      )}
 
       {/* 6. КАССОВЫЙ ПРОГНОЗ 90 дней */}
       {chartData.length > 0 && (

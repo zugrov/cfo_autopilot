@@ -105,8 +105,29 @@ export type ObligationItem = {
   is_recurring: boolean
 }
 
+export type UserMe = {
+  email: string
+  role: 'owner' | 'accountant' | 'viewer'
+  company_id: string
+}
+
+export type TransactionItem = {
+  date: string
+  amount: number
+  direction: 'credit' | 'debit'
+  counterparty: string | null
+  purpose: string | null
+}
+
 export const api = {
   getDashboard: () => apiFetch<DashboardData>('/dashboard/today'),
+
+  getMe: () => apiFetch<UserMe>('/auth/me'),
+
+  listTransactions: (limit = 50, offset = 0) =>
+    apiFetch<{ transactions: TransactionItem[] }>(
+      `/dashboard/transactions?limit=${limit}&offset=${offset}`
+    ),
 
   register: (email: string, companyName: string) =>
     apiFetch<{ access_token: string; company_id: string; user_id: string }>('/auth/register', {

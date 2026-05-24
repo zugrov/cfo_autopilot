@@ -6,6 +6,7 @@ import { api, ObligationItem } from '@/lib/api'
 type Props = {
   onClose: () => void
   onRefreshDashboard: () => void
+  canEdit?: boolean
 }
 
 type FormState = {
@@ -46,7 +47,7 @@ function statusBadge(status: string, dueDate: string): string {
   return 'text-neutral-500'
 }
 
-export function ObligationsPanel({ onClose, onRefreshDashboard }: Props) {
+export function ObligationsPanel({ onClose, onRefreshDashboard, canEdit = true }: Props) {
   const [obligations, setObligations] = useState<ObligationItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -131,7 +132,7 @@ export function ObligationsPanel({ onClose, onRefreshDashboard }: Props) {
           )}
 
           {/* Форма создания */}
-          {showForm ? (
+          {canEdit && (showForm ? (
             <form onSubmit={handleCreate} className="border border-neutral-200 rounded-lg p-3 space-y-2">
               <p className="text-xs font-medium text-neutral-700 mb-1">Новое обязательство</p>
               <div className="grid grid-cols-2 gap-2">
@@ -203,7 +204,7 @@ export function ObligationsPanel({ onClose, onRefreshDashboard }: Props) {
             >
               + Добавить обязательство
             </button>
-          )}
+          ))}
 
           {/* Ожидающие */}
           {isLoading ? (
@@ -234,6 +235,7 @@ export function ObligationsPanel({ onClose, onRefreshDashboard }: Props) {
                     <span className="text-sm font-medium text-neutral-900">
                       {formatAmount(o.amount)}
                     </span>
+                    {canEdit && (
                     <button
                       onClick={() => handlePay(o.id)}
                       disabled={payingId === o.id}
@@ -241,6 +243,7 @@ export function ObligationsPanel({ onClose, onRefreshDashboard }: Props) {
                     >
                       {payingId === o.id ? '…' : 'Оплачено'}
                     </button>
+                    )}
                   </div>
                 </div>
               ))}

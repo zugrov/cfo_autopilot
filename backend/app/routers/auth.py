@@ -13,6 +13,7 @@ from pydantic import BaseModel, EmailStr
 
 from app.core.database import get_db
 from app.core.auth import create_access_token, CurrentUser
+from app.core.rbac import ReadUser, OwnerUser
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -31,6 +32,21 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     company_id: str
     user_id: str
+
+
+class MeResponse(BaseModel):
+    email: str
+    role: str
+    company_id: str
+
+
+@router.get("/me", response_model=MeResponse, summary="Текущий пользователь")
+async def get_me(current_user: ReadUser) -> MeResponse:
+    return MeResponse(
+        email=current_user.email,
+        role=current_user.role,
+        company_id=str(current_user.company_id),
+    )
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -100,7 +116,7 @@ class TelegramRequest(BaseModel):
 @router.patch("/me/telegram", summary="Привязать Telegram chat_id к аккаунту")
 async def set_telegram(
     body: TelegramRequest,
-    current_user: CurrentUser,
+    current_user: OwnerUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Сохраняет telegram_chat_id пользователя — после этого бот начнёт присылать дайджест."""
@@ -120,7 +136,7 @@ CONNECT_CODE_TTL = 600  # 10 минут
 
 
 @router.post("/me/telegram/connect-code", summary="Сгенерировать одноразовый код привязки Telegram")
-async def generate_connect_code(current_user: CurrentUser) -> dict:
+async def generate_connect_code(current_user: OwnerUser) -> dict:
     """
     Генерирует 6-значный код и сохраняет его в Redis с TTL 10 минут.
     Бот использует этот код для команды /connect <code>.

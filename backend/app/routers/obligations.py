@@ -12,7 +12,7 @@ from sqlalchemy import text
 from pydantic import BaseModel
 
 from app.core.database import get_db
-from app.core.auth import CurrentUser
+from app.core.rbac import ReadUser, ObligationUser
 from app.core.audit import log_action
 
 router = APIRouter(prefix="/obligations", tags=["obligations"])
@@ -36,7 +36,7 @@ class ObligationResponse(BaseModel):
 
 @router.get("", summary="Список обязательств")
 async def list_obligations(
-    current_user: CurrentUser,
+    current_user: ReadUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     cid = current_user.company_id
@@ -71,7 +71,7 @@ async def list_obligations(
 @router.post("", status_code=status.HTTP_201_CREATED, summary="Создать обязательство")
 async def create_obligation(
     body: ObligationCreate,
-    current_user: CurrentUser,
+    current_user: ObligationUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     cid = current_user.company_id
@@ -119,7 +119,7 @@ async def create_obligation(
 @router.patch("/{obligation_id}/pay", summary="Отметить обязательство как оплаченное")
 async def mark_paid(
     obligation_id: uuid.UUID,
-    current_user: CurrentUser,
+    current_user: ObligationUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     cid = current_user.company_id
