@@ -108,24 +108,40 @@ function AuthForm({ onSuccess }: { onSuccess: () => void }) {
 }
 
 function TelegramModal({ onClose }: { onClose: () => void }) {
-  const [chatId, setChatId] = useState('')
-  const [isSaving, setIsSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [code, setCode] = useState<string | null>(null)
+  const [expiresAt, setExpiresAt] = useState<number | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [secondsLeft, setSecondsLeft] = useState(0)
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsSaving(true)
+  useEffect(() => {
+    if (!expiresAt) return
+    const tick = () => {
+      const left = Math.max(0, Math.round((expiresAt - Date.now()) / 1000))
+      setSecondsLeft(left)
+      if (left === 0) setCode(null)
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [expiresAt])
+
+  const handleGetCode = async () => {
+    setIsLoading(true)
     setError(null)
     try {
-      await api.updateTelegram(chatId.trim())
-      setSaved(true)
+      const result = await api.getTelegramConnectCode()
+      setCode(result.code)
+      setExpiresAt(Date.now() + result.ttl_seconds * 1000)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Ошибка сохранения')
+      setError(err instanceof Error ? err.message : 'Ошибка получения кода')
     } finally {
-      setIsSaving(false)
+      setIsLoading(false)
     }
   }
+
+  const mm = Math.floor(secondsLeft / 60)
+  const ss = String(secondsLeft % 60).padStart(2, '0')
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
@@ -141,52 +157,44 @@ function TelegramModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        {saved ? (
-          <div className="text-center py-4">
-            <p className="text-sm font-medium text-green-700 mb-1">Сохранено!</p>
-            <p className="text-xs text-neutral-500">
-              Дайджест будет приходить каждое утро в 08:00
-            </p>
-            <button
-              onClick={onClose}
-              className="mt-4 px-4 py-1.5 text-xs bg-neutral-900 text-white rounded hover:bg-neutral-800 transition-colors"
-            >
-              Закрыть
-            </button>
+        <div className="space-y-4">
+          <div className="bg-neutral-50 rounded-lg p-3 text-xs text-neutral-600 space-y-1">
+            <p className="font-medium">Как привязать Telegram:</p>
+            <ol className="list-decimal list-inside space-y-0.5">
+              <li>Нажмите «Получить код» ниже</li>
+              <li>Откройте бота в Telegram</li>
+              <li>Отправьте <span className="font-mono">/connect {'<код>'}</span></li>
+            </ol>
           </div>
-        ) : (
-          <form onSubmit={handleSave} className="space-y-3">
-            <div className="bg-neutral-50 rounded-lg p-3 text-xs text-neutral-600 space-y-1">
-              <p className="font-medium">Как найти свой Telegram Chat ID:</p>
-              <ol className="list-decimal list-inside space-y-0.5">
-                <li>Откройте Telegram</li>
-                <li>Напишите боту <span className="font-mono">@userinfobot</span></li>
-                <li>Скопируйте ваш <span className="font-mono">Id</span></li>
-              </ol>
+
+          {error && (
+            <p className="text-xs text-red-500 bg-red-50 rounded px-3 py-2">{error}</p>
+          )}
+
+          {code && secondsLeft > 0 ? (
+            <div className="text-center space-y-2">
+              <p className="text-xs text-neutral-500">Ваш код (действует {mm}:{ss}):</p>
+              <div className="text-3xl font-mono font-bold tracking-widest text-neutral-900 bg-neutral-50 rounded-lg py-3">
+                {code}
+              </div>
+              <p className="text-xs text-neutral-400">
+                Отправьте боту: <span className="font-mono text-neutral-600">/connect {code}</span>
+              </p>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-neutral-700 mb-1">
-                Telegram Chat ID
-              </label>
-              <input
-                type="text"
-                value={chatId}
-                onChange={(e) => setChatId(e.target.value)}
-                required
-                placeholder="123456789"
-                className="w-full px-3 py-2 text-sm border border-neutral-200 rounded outline-none focus:border-neutral-400"
-              />
-            </div>
-            {error && <p className="text-xs text-red-500">{error}</p>}
+          ) : (
             <button
-              type="submit"
-              disabled={isSaving || !chatId.trim()}
+              onClick={handleGetCode}
+              disabled={isLoading}
               className="w-full py-2 text-sm font-medium bg-neutral-900 text-white rounded hover:bg-neutral-800 disabled:opacity-50 transition-colors"
             >
-              {isSaving ? 'Сохранение…' : 'Сохранить'}
+              {isLoading ? 'Получение кода…' : code ? 'Получить новый код' : 'Получить код'}
             </button>
-          </form>
-        )}
+          )}
+
+          <p className="text-xs text-neutral-400 text-center">
+            После привязки дайджест будет приходить каждое утро в 08:00
+          </p>
+        </div>
       </div>
     </div>
   )

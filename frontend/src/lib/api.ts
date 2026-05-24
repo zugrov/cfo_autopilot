@@ -113,6 +113,11 @@ export const api = {
       body: JSON.stringify({ telegram_chat_id: telegramChatId }),
     }),
 
+  getTelegramConnectCode: () =>
+    apiFetch<{ code: string; ttl_seconds: number }>('/auth/me/telegram/connect-code', {
+      method: 'POST',
+    }),
+
   askAI: (question: string) =>
     apiFetch<{ answer: string; provider: string; cached: boolean }>('/ai/chat', {
       method: 'POST',

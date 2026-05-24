@@ -7,8 +7,8 @@ Sprint 2+: алерты дефицита, ответы на вопросы.
 from __future__ import annotations
 
 import logging
-import os
 
+import httpx
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart, Command
 from aiogram.enums import ParseMode
@@ -27,13 +27,65 @@ async def cmd_start(message: types.Message) -> None:
     await message.answer(
         "👋 Добро пожаловать в <b>Финансовый автопилот</b>!\n\n"
         "Я буду присылать ежедневную сводку о финансах вашей компании в 08:00 МСК.\n\n"
-        "Для подключения: войдите в личный кабинет и привяжите Telegram-аккаунт."
+        "Для подключения: откройте личный кабинет → Telegram → нажмите «Получить код» "
+        "и отправьте мне команду <code>/connect 123456</code>."
     )
 
 
 @dp.message(Command("status"))
 async def cmd_status(message: types.Message) -> None:
     await message.answer("Используйте /start для начала работы или откройте веб-приложение.")
+
+
+@dp.message(Command("connect"))
+async def cmd_connect(message: types.Message) -> None:
+    """
+    /connect 123456 — привязать аккаунт по одноразовому коду.
+    Бот смотрит код в Redis (ключ connect:{code}), получает user_id,
+    затем вызывает внутренний endpoint для обновления telegram_chat_id.
+    """
+    import redis.asyncio as aioredis
+
+    text_parts = (message.text or "").strip().split()
+    if len(text_parts) < 2 or not text_parts[1].isdigit() or len(text_parts[1]) != 6:
+        await message.answer(
+            "⚠️ Укажите 6-значный код: <code>/connect 123456</code>\n\n"
+            "Код можно получить в личном кабинете → Telegram → «Получить код»."
+        )
+        return
+
+    code = text_parts[1]
+    chat_id = str(message.chat.id)
+
+    redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        user_id = await redis_client.get(f"connect:{code}")
+        if not user_id:
+            await message.answer(
+                "❌ Код не найден или истёк. Запросите новый код в личном кабинете."
+            )
+            return
+        await redis_client.delete(f"connect:{code}")
+    finally:
+        await redis_client.aclose()
+
+    # Сохраняем telegram_chat_id через внутренний backend endpoint
+    try:
+        async with httpx.AsyncClient(base_url=settings.backend_url, timeout=10) as client:
+            resp = await client.patch(
+                "/auth/internal/set-telegram",
+                json={"user_id": user_id, "telegram_chat_id": chat_id},
+            )
+            resp.raise_for_status()
+    except Exception as exc:
+        logger.error("Failed to link telegram for user %s: %s", user_id, exc)
+        await message.answer("⚠️ Не удалось привязать аккаунт. Попробуйте позже.")
+        return
+
+    await message.answer(
+        "✅ <b>Аккаунт привязан!</b>\n\n"
+        "Теперь вы будете получать ежедневный финансовый дайджест в 08:00 МСК."
+    )
 
 
 async def send_digest_for_company(company_id: str) -> dict:

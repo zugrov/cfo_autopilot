@@ -3,8 +3,8 @@ Router: /auth — регистрация и вход.
 """
 from __future__ import annotations
 
+import random
 import uuid
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -114,3 +114,75 @@ async def set_telegram(
     )
     await db.commit()
     return {"status": "ok", "telegram_chat_id": body.telegram_chat_id}
+
+
+CONNECT_CODE_TTL = 600  # 10 минут
+
+
+@router.post("/me/telegram/connect-code", summary="Сгенерировать одноразовый код привязки Telegram")
+async def generate_connect_code(current_user: CurrentUser) -> dict:
+    """
+    Генерирует 6-значный код и сохраняет его в Redis с TTL 10 минут.
+    Бот использует этот код для команды /connect <code>.
+    """
+    from app.core.config import get_settings
+    import redis.asyncio as aioredis
+
+    settings = get_settings()
+    code = f"{random.randint(0, 999999):06d}"
+    redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        await redis_client.set(f"connect:{code}", str(current_user.id), ex=CONNECT_CODE_TTL)
+    finally:
+        await redis_client.aclose()
+
+    return {"code": code, "ttl_seconds": CONNECT_CODE_TTL}
+
+
+class InternalSetTelegramRequest(BaseModel):
+    user_id: str
+    telegram_chat_id: str
+
+
+@router.patch(
+    "/internal/set-telegram",
+    summary="[Internal] Привязать telegram_chat_id по user_id (вызывается ботом)",
+    include_in_schema=False,
+)
+async def internal_set_telegram(
+    body: InternalSetTelegramRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Служебный endpoint: бот вызывает его после верификации кода из Redis.
+    Защита через заголовок X-Internal-Secret (telegram_webhook_secret из .env).
+    """
+    from app.core.config import get_settings
+
+    settings = get_settings()
+
+    try:
+        uid = uuid.UUID(body.user_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user_id")
+
+    # Получаем company_id пользователя для set_config RLS
+    result = await db.execute(
+        text('SELECT company_id FROM "user" WHERE id = :uid AND is_active = true'),
+        {"uid": uid},
+    )
+    row = result.fetchone()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    company_id = row[0]
+    await db.execute(
+        text("SELECT set_config('app.company_id', :cid, true)"),
+        {"cid": str(company_id)},
+    )
+    await db.execute(
+        text('UPDATE "user" SET telegram_chat_id = :tid WHERE id = :uid'),
+        {"tid": body.telegram_chat_id, "uid": uid},
+    )
+    await db.commit()
+    return {"status": "ok"}

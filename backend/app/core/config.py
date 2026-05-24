@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_webhook_secret: str = ""
 
+    # Internal
+    backend_url: str = "http://localhost:8000"
+
     # LLM
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
