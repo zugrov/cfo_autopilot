@@ -10,6 +10,7 @@ import { TransactionsPanel } from '@/components/dashboard/TransactionsPanel'
 import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard'
 import { OnboardingBanner } from '@/components/onboarding/OnboardingBanner'
 import { TeamPanel } from '@/components/team/TeamPanel'
+import { AuditPanel } from '@/components/audit/AuditPanel'
 
 type AuthMode = 'login' | 'register'
 
@@ -217,6 +218,7 @@ export default function HomePage() {
   const [showAiChat, setShowAiChat] = useState(false)
   const [showTransactions, setShowTransactions] = useState(false)
   const [showTeam, setShowTeam] = useState(false)
+  const [showAudit, setShowAudit] = useState(false)
   const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null)
   const [isDownloadingReport, setIsDownloadingReport] = useState(false)
 
@@ -359,6 +361,14 @@ export default function HomePage() {
           )}
           {isOwner && (
           <button
+            onClick={() => setShowAudit(true)}
+            className="text-xs font-medium text-neutral-600 hover:text-neutral-900 transition-colors"
+          >
+            Журнал
+          </button>
+          )}
+          {isOwner && (
+          <button
             onClick={() => setShowTeam(true)}
             className="text-xs font-medium text-neutral-600 hover:text-neutral-900 transition-colors"
           >
@@ -434,6 +444,10 @@ export default function HomePage() {
 
       {showTeam && (
         <TeamPanel onClose={() => setShowTeam(false)} />
+      )}
+
+      {showAudit && (
+        <AuditPanel onClose={() => setShowAudit(false)} />
       )}
     </>
   )

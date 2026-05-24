@@ -144,6 +144,16 @@ export type TeamMember = {
   telegram_connected: boolean
 }
 
+export type AuditEntry = {
+  id: string
+  action: string
+  entity: string | null
+  entity_id: string | null
+  metadata: Record<string, unknown>
+  at: string | null
+  user_email: string | null
+}
+
 export const api = {
   getDashboard: () => apiFetch<DashboardData>('/dashboard/today'),
 
@@ -259,4 +269,9 @@ export const api = {
     }
     return res.blob()
   },
+
+  listAuditLog: (limit = 50, offset = 0) =>
+    apiFetch<{ entries: AuditEntry[]; total: number; limit: number; offset: number }>(
+      `/audit?limit=${limit}&offset=${offset}`
+    ),
 }
