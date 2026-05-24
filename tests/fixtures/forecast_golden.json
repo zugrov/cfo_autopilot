@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "company_id": "test-company-uuid",
+    "as_of_date": "2026-05-22",
+    "current_balance": 660000.00,
+    "scenario": "base",
+    "horizon_days": 30,
+    "description": "Golden file для ForecastEngine unit-тестов. Входные данные: 8 транзакций из sber_sample.csv, 2 обязательства."
+  },
+  "inputs": {
+    "transactions": [
+      {"txn_date": "2026-05-02", "amount": 500000.00, "direction": "credit"},
+      {"txn_date": "2026-05-05", "amount": 80000.00,  "direction": "debit"},
+      {"txn_date": "2026-05-10", "amount": 250000.00, "direction": "credit"},
+      {"txn_date": "2026-05-12", "amount": 450000.00, "direction": "debit"},
+      {"txn_date": "2026-05-15", "amount": 35000.00,  "direction": "debit"},
+      {"txn_date": "2026-05-18", "amount": 180000.00, "direction": "credit"},
+      {"txn_date": "2026-05-20", "amount": 25000.00,  "direction": "debit"},
+      {"txn_date": "2026-05-22", "amount": 320000.00, "direction": "credit"}
+    ],
+    "obligations": [
+      {"due_date": "2026-06-05", "amount": 80000.00,  "status": "pending"},
+      {"due_date": "2026-06-12", "amount": 450000.00, "status": "pending"}
+    ]
+  },
+  "expected": {
+    "current_balance": 660000.00,
+    "has_obligations": true,
+    "deficit_day_7": null,
+    "deficit_day_14": null,
+    "deficit_day_30": null,
+    "day_14_balance_gt_0": true,
+    "median_daily_inflow_7d_gt_0": true
+  }
+}

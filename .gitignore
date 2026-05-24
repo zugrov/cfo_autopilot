@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+.venv/
+venv/
+.pyenv/
+
+# Environment files — не коммитить секреты
+backend/.env
+frontend/.env.local
+
+# Poetry
+backend/.poetry-cache/
+
+# SQLite
+*.db
+*.sqlite3
+
+# Alembic local state
+backend/alembic/__pycache__/
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.turbo/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Pytest
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Logs
+*.log

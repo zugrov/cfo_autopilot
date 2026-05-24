@@ -1,0 +1,104 @@
+# YAML-каталог типовых AI-вопросов (Sprint 3)
+# Расширяем без изменения кода — добавляем записи сюда.
+# Поле "sql_hint" используется для structured-query-first подхода (RAG).
+
+questions:
+  - id: q_balance_today
+    text: "Сколько денег сейчас на счёте?"
+    category: balance
+    sql_hint: "SELECT balance FROM daily_cash_snapshot WHERE company_id = :cid AND snapshot_date = today()"
+
+  - id: q_balance_change_7d
+    text: "Почему изменился остаток за последние 7 дней?"
+    category: explain
+    sql_hint: "SELECT txn_date, amount, direction, counterparty_raw FROM transaction WHERE txn_date >= today()-7 ORDER BY amount DESC"
+
+  - id: q_deficit_when
+    text: "Когда ожидается кассовый разрыв?"
+    category: forecast
+    sql_hint: "SELECT forecast_json->>'deficit_day_14' FROM daily_cash_snapshot WHERE snapshot_date = today()"
+
+  - id: q_largest_expense
+    text: "Какие самые крупные расходы за месяц?"
+    category: analysis
+    sql_hint: "SELECT counterparty_raw, SUM(amount) FROM transaction WHERE direction='debit' AND txn_date >= today()-30 GROUP BY 1 ORDER BY 2 DESC LIMIT 5"
+
+  - id: q_top_counterparties
+    text: "Кому мы платим больше всего?"
+    category: analysis
+    sql_hint: "SELECT counterparty_raw, SUM(amount) FROM transaction WHERE direction='debit' GROUP BY 1 ORDER BY 2 DESC LIMIT 5"
+
+  - id: q_incoming_next_week
+    text: "Сколько ожидается поступлений на следующей неделе?"
+    category: forecast
+    sql_hint: "SELECT SUM(amount) FROM receivable WHERE due_date BETWEEN today() AND today()+7 AND status='open'"
+
+  - id: q_overdue_receivable
+    text: "Какие клиенты задерживают оплату?"
+    category: receivable
+    sql_hint: "SELECT counterparty_id, amount, due_date FROM receivable WHERE status='overdue' ORDER BY due_date"
+
+  - id: q_obligations_next_month
+    text: "Какие обязательства нужно оплатить в этом месяце?"
+    category: obligations
+    sql_hint: "SELECT due_date, amount, description FROM obligation WHERE status='pending' AND due_date <= today()+30 ORDER BY due_date"
+
+  - id: q_cash_trend
+    text: "Как менялся остаток за последние 3 месяца?"
+    category: trend
+    sql_hint: "SELECT snapshot_date, balance FROM daily_cash_snapshot WHERE snapshot_date >= today()-90 ORDER BY snapshot_date"
+
+  - id: q_forecast_30d
+    text: "Каков прогноз остатка на 30 дней вперёд?"
+    category: forecast
+    sql_hint: "SELECT forecast_json->'days' FROM daily_cash_snapshot WHERE snapshot_date = today()"
+
+  - id: q_income_vs_expenses
+    text: "Доходы и расходы за последний месяц?"
+    category: analysis
+    sql_hint: "SELECT direction, SUM(amount) FROM transaction WHERE txn_date >= today()-30 GROUP BY direction"
+
+  - id: q_bank_balance_discrepancy
+    text: "Совпадает ли остаток в 1С с банком?"
+    category: reconciliation
+    sql_hint: "SELECT * FROM reconciliation_alert WHERE company_id = :cid ORDER BY created_at DESC LIMIT 1"
+
+  - id: q_stale_data
+    text: "Когда последний раз обновлялись данные?"
+    category: data_quality
+    sql_hint: "SELECT MAX(updated_at) FROM import_batch WHERE status IN ('done','partial')"
+
+  - id: q_scenario_stress
+    text: "Что будет если поступления снизятся на 15%?"
+    category: scenario
+    sql_hint: null  # stress scenario из forecast_json
+
+  - id: q_salary_risk
+    text: "Хватит ли денег на зарплату?"
+    category: obligations
+    sql_hint: "SELECT due_date, amount FROM obligation WHERE description ILIKE '%зарплата%' AND status='pending' ORDER BY due_date LIMIT 1"
+
+  - id: q_tax_upcoming
+    text: "Когда следующие налоговые платежи?"
+    category: obligations
+    sql_hint: "SELECT due_date, amount, description FROM obligation WHERE description ILIKE '%налог%' AND status='pending' ORDER BY due_date LIMIT 3"
+
+  - id: q_cash_sufficiency_90d
+    text: "Хватит ли денег на 3 месяца при текущих расходах?"
+    category: forecast
+    sql_hint: null  # 91-day forecast
+
+  - id: q_biggest_risk_today
+    text: "Какой главный финансовый риск сегодня?"
+    category: risk
+    sql_hint: null  # signals + forecast combined
+
+  - id: q_working_capital
+    text: "Каков рабочий капитал компании?"
+    category: analysis
+    sql_hint: "SELECT balance FROM daily_cash_snapshot WHERE snapshot_date = today()"
+
+  - id: q_payment_calendar
+    text: "Покажи платёжный календарь на 2 недели"
+    category: obligations
+    sql_hint: "SELECT due_date, amount, description FROM obligation WHERE status='pending' AND due_date <= today()+14 ORDER BY due_date"
