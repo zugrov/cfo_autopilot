@@ -27,6 +27,7 @@ os.environ.setdefault("JWT_SECRET", "test-secret")
 os.environ.setdefault("JWT_ALGORITHM", "HS256")
 os.environ.setdefault("JWT_EXPIRE_MINUTES", "60")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ.setdefault("TELEGRAM_WEBHOOK_SECRET", "")
 
 from app.main import app  # noqa: E402
 
@@ -39,6 +40,7 @@ def event_loop():
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()
+    asyncio.set_event_loop(None)
 
 
 @pytest_asyncio.fixture(scope="session")

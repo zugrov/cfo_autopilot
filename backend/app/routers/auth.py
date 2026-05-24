@@ -6,7 +6,7 @@ from __future__ import annotations
 import random
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Header, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from pydantic import BaseModel, EmailStr
@@ -152,6 +152,7 @@ class InternalSetTelegramRequest(BaseModel):
 async def internal_set_telegram(
     body: InternalSetTelegramRequest,
     db: AsyncSession = Depends(get_db),
+    x_internal_secret: str | None = Header(default=None, alias="X-Internal-Secret"),
 ) -> dict:
     """
     Служебный endpoint: бот вызывает его после верификации кода из Redis.
@@ -160,6 +161,13 @@ async def internal_set_telegram(
     from app.core.config import get_settings
 
     settings = get_settings()
+    if not settings.telegram_webhook_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Internal endpoint not configured",
+        )
+    if x_internal_secret != settings.telegram_webhook_secret:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
     try:
         uid = uuid.UUID(body.user_id)

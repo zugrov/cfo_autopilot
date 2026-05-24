@@ -71,10 +71,14 @@ async def cmd_connect(message: types.Message) -> None:
 
     # Сохраняем telegram_chat_id через внутренний backend endpoint
     try:
+        headers = {}
+        if settings.telegram_webhook_secret:
+            headers["X-Internal-Secret"] = settings.telegram_webhook_secret
         async with httpx.AsyncClient(base_url=settings.backend_url, timeout=10) as client:
             resp = await client.patch(
                 "/auth/internal/set-telegram",
                 json={"user_id": user_id, "telegram_chat_id": chat_id},
+                headers=headers,
             )
             resp.raise_for_status()
     except Exception as exc:
