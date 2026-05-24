@@ -247,4 +247,16 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(patch),
     }),
+
+  downloadWeeklyReport: async (): Promise<Blob> => {
+    const token = getToken()
+    const res = await fetch(`${API_BASE}/reports/weekly`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ detail: res.statusText }))
+      throw new Error(error.detail ?? 'Ошибка загрузки отчёта')
+    }
+    return res.blob()
+  },
 }

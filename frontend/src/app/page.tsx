@@ -218,6 +218,7 @@ export default function HomePage() {
   const [showTransactions, setShowTransactions] = useState(false)
   const [showTeam, setShowTeam] = useState(false)
   const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null)
+  const [isDownloadingReport, setIsDownloadingReport] = useState(false)
 
   const canImport = user?.role !== 'viewer'
   const canEditObligations = user?.role !== 'viewer'
@@ -284,6 +285,23 @@ export default function HomePage() {
     setOnboarding(null)
   }
 
+  const handleDownloadReport = async () => {
+    setIsDownloadingReport(true)
+    try {
+      const blob = await api.downloadWeeklyReport()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `report-${new Date().toISOString().slice(0, 10)}.pdf`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Не удалось скачать отчёт')
+    } finally {
+      setIsDownloadingReport(false)
+    }
+  }
+
   if (!token) {
     return <AuthForm onSuccess={() => setToken(localStorage.getItem('access_token'))} />
   }
@@ -328,6 +346,15 @@ export default function HomePage() {
             className="text-xs font-medium text-trust hover:text-trust-dark transition-colors"
           >
             + Выписка
+          </button>
+          )}
+          {isOwner && (
+          <button
+            onClick={handleDownloadReport}
+            disabled={isDownloadingReport}
+            className="text-xs font-medium text-neutral-600 hover:text-neutral-900 transition-colors disabled:opacity-50"
+          >
+            {isDownloadingReport ? 'Загрузка…' : 'Скачать отчёт'}
           </button>
           )}
           {isOwner && (

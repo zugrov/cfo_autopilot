@@ -40,6 +40,14 @@ class Settings(BaseSettings):
     # Upload
     max_upload_size_mb: int = 10
 
+    # SMTP (еженедельный управленческий дайджест)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "noreply@cfo-autopilot.ru"
+    smtp_use_tls: bool = True
+
 
 @lru_cache
 def get_settings() -> Settings:
