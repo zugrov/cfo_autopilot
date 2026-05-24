@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,7 +50,9 @@ async def evaluate_signals(
 
     # Stale data: нет импорта > 24 часов
     if last_import_at:
-        hours_stale = (datetime.utcnow() - last_import_at).total_seconds() / 3600
+        now_utc = datetime.now(timezone.utc)
+        last_import_aware = last_import_at if last_import_at.tzinfo else last_import_at.replace(tzinfo=timezone.utc)
+        hours_stale = (now_utc - last_import_aware).total_seconds() / 3600
         if hours_stale > 24:
             signals.append(
                 Signal(

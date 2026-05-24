@@ -18,7 +18,7 @@ from app.core.config import get_settings
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
-bot = Bot(token=settings.telegram_bot_token, parse_mode=ParseMode.HTML)
+bot = Bot(token=settings.telegram_bot_token, parse_mode=ParseMode.HTML) if settings.telegram_bot_token else None
 dp = Dispatcher()
 
 
@@ -102,6 +102,9 @@ async def send_digest_for_company(company_id: str) -> dict:
             )
 
         for chat_id in chat_ids:
+            if not bot:
+                logger.warning("TELEGRAM_BOT_TOKEN не настроен — дайджест не отправляется")
+                break
             try:
                 await bot.send_message(chat_id=chat_id, text=text_msg)
                 sent_count += 1
