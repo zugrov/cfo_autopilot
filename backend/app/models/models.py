@@ -205,6 +205,15 @@ class Receivable(Base):
     # status: open | overdue | collected | written_off
     status: Mapped[str] = mapped_column(String(32), default="open")
     source: Mapped[str] = mapped_column(String(32), default="manual")
+    # aging_bucket: 0_30 | 31_60 | 61_90 | 90_plus | unknown
+    aging_bucket: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    # expected collection probability (0.000–1.000); None means 0 for forecast
+    collection_probability: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(4, 3), nullable=True
+    )
+    import_batch_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("import_batch.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 

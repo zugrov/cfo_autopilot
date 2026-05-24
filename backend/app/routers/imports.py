@@ -26,6 +26,7 @@ class ImportBatchResponse(BaseModel):
     row_count: int | None
     imported_count: int | None
     error_log: list | None
+    meta: dict | None = None
 
     model_config = {"from_attributes": True}
 
@@ -102,8 +103,67 @@ async def upload_bank_csv(
     )
 
 
-@router.get("/history", summary="История загрузок")
-async def import_history(
+@router.post(
+    "/onec",
+    response_model=ImportBatchResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Загрузить выгрузку 1С ОСВ (CSV)",
+)
+async def upload_onec_osv(
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+    file: UploadFile = File(...),
+) -> ImportBatchResponse:
+    await db.execute(
+        text("SELECT set_config('app.company_id', :cid, true)"),
+        {"cid": str(current_user.company_id)},
+    )
+
+    raw_bytes = await file.read()
+
+    try:
+        batch, meta = await _import_service.import_onec_osv(
+            db=db,
+            company_id=current_user.company_id,
+            user_id=current_user.id,
+            filename=file.filename or "osv.csv",
+            raw_bytes=raw_bytes,
+        )
+        await db.commit()
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+    try:
+        from app.services.forecast.snapshot import recompute_snapshot
+        async with db.begin_nested():
+            await recompute_snapshot(db, current_user.company_id)
+        await db.commit()
+    except Exception:
+        pass
+
+    try:
+        from arq import create_pool
+        from arq.connections import RedisSettings
+        from app.core.config import get_settings
+        settings = get_settings()
+        redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+        await redis.enqueue_job("task_recompute_snapshot", str(current_user.company_id))
+        await redis.aclose()
+    except Exception:
+        pass
+
+    return ImportBatchResponse(
+        id=batch.id,
+        status=batch.status,
+        filename=batch.filename,
+        row_count=batch.row_count,
+        imported_count=batch.imported_count,
+        error_log=batch.error_log,
+        meta=meta,
+    )
+
+
+@router.get("/history", summary="История загрузок")async def import_history(
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
     limit: int = 20,

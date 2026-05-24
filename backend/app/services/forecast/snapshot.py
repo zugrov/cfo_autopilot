@@ -69,6 +69,26 @@ async def recompute_snapshot(
         for r in ob_rows.fetchall()
     ]
 
+    # Дебиторка (только open/overdue с collection_probability > 0)
+    rcv_rows = await db.execute(
+        text(
+            "SELECT due_date, amount, collection_probability, aging_bucket, status "
+            "FROM receivable "
+            "WHERE company_id = :cid AND status IN ('open', 'overdue') "
+            "AND collection_probability IS NOT NULL AND collection_probability > 0"
+        ),
+        {"cid": company_id},
+    )
+    receivables = [
+        {
+            "due_date": r[0],
+            "expected_amount": Decimal(str(r[1])) * Decimal(str(r[2])),
+            "aging_bucket": r[3],
+            "status": r[4],
+        }
+        for r in rcv_rows.fetchall()
+    ]
+
     current_balance = await _get_current_balance(db, company_id)
 
     common_args = dict(
@@ -76,6 +96,7 @@ async def recompute_snapshot(
         current_balance=current_balance,
         transactions=transactions,
         obligations=obligations,
+        receivables=receivables,
         as_of_date=as_of,
         horizon_days=91,
     )
@@ -90,6 +111,7 @@ async def recompute_snapshot(
                 "balance": float(d.forecast_balance),
                 "inflow": float(d.inflow_estimate),
                 "outflow": float(d.outflow_obligations),
+                "receivable_collections": float(d.receivable_collections),
             }
             for d in forecast.days
         ],
@@ -109,6 +131,8 @@ async def recompute_snapshot(
         "deficit_day_30_stress": forecast_stress.deficit_day_30.isoformat() if forecast_stress.deficit_day_30 else None,
         "deficit_day_91_stress": forecast_stress.deficit_day_91.isoformat() if forecast_stress.deficit_day_91 else None,
         "has_obligations": forecast.has_obligations,
+        "has_receivables": forecast.has_receivables,
+        "has_aging_detail": forecast.has_aging_detail,
     }
 
     await db.execute(

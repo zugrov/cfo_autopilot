@@ -109,6 +109,17 @@ export const api = {
     }).then((r) => r.json())
   },
 
+  uploadOneC: (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const token = getToken()
+    return fetch(`${API_BASE}/imports/onec`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd,
+    }).then((r) => r.json())
+  },
+
   listObligations: () =>
     apiFetch<{ obligations: ObligationItem[] }>('/obligations'),
 

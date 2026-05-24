@@ -37,6 +37,7 @@ class ForecastDay:
     forecast_balance: Decimal
     inflow_estimate: Decimal
     outflow_obligations: Decimal
+    receivable_collections: Decimal
     scenario: ScenarioType
 
 
@@ -48,6 +49,8 @@ class ForecastResult:
     horizon_days: int
     days: list[ForecastDay]
     has_obligations: bool
+    has_receivables: bool
+    has_aging_detail: bool
     # Первый день дефицита по горизонтам
     deficit_day_7: date | None = None
     deficit_day_14: date | None = None
@@ -83,12 +86,15 @@ def compute_forecast(
     as_of_date: date,
     horizon_days: int = 91,
     scenario: ScenarioType = "base",
+    receivables: list[dict] | None = None,  # [{due_date, expected_amount, status}]
 ) -> ForecastResult:
     """
     Вычисляет детерминированный прогноз остатка.
 
     transactions: список dict {txn_date: date, amount: Decimal, direction: str}
     obligations:  список dict {due_date: date, amount: Decimal, status: str}
+    receivables:  список dict {due_date: date, expected_amount: Decimal, status: str}
+                  (expected_amount = amount * collection_probability)
     """
     inflow_multiplier, outflow_multiplier = SCENARIO_MULTIPLIERS[scenario]
 
@@ -103,6 +109,17 @@ def compute_forecast(
 
     has_obligations = bool(pending_obligations)
 
+    # Группируем дебиторку по due_date; только open/overdue
+    receivable_by_day: dict[date, Decimal] = {}
+    _receivables = receivables or []
+    for rcv in _receivables:
+        if rcv["status"] in ("open", "overdue") and rcv["due_date"] >= as_of_date:
+            d = rcv["due_date"]
+            receivable_by_day[d] = receivable_by_day.get(d, Decimal(0)) + rcv["expected_amount"]
+
+    has_receivables = bool(receivable_by_day)
+    has_aging_detail = bool(_receivables)
+
     days: list[ForecastDay] = []
     balance = current_balance
     deficit_days: dict[int, date | None] = {7: None, 14: None, 30: None, 91: None}
@@ -112,7 +129,10 @@ def compute_forecast(
         obligations_today = pending_obligations.get(day, Decimal(0))
         obligations_adjusted = Decimal(str(float(obligations_today) * outflow_multiplier))
 
-        balance = balance + median_inflow_adjusted - obligations_adjusted
+        receivables_today = receivable_by_day.get(day, Decimal(0))
+        receivables_adjusted = Decimal(str(float(receivables_today) * inflow_multiplier))
+
+        balance = balance + median_inflow_adjusted + receivables_adjusted - obligations_adjusted
 
         days.append(
             ForecastDay(
@@ -120,6 +140,7 @@ def compute_forecast(
                 forecast_balance=balance,
                 inflow_estimate=median_inflow_adjusted,
                 outflow_obligations=obligations_adjusted,
+                receivable_collections=receivables_adjusted,
                 scenario=scenario,
             )
         )
@@ -136,6 +157,8 @@ def compute_forecast(
         horizon_days=horizon_days,
         days=days,
         has_obligations=has_obligations,
+        has_receivables=has_receivables,
+        has_aging_detail=has_aging_detail,
         deficit_day_7=deficit_days[7],
         deficit_day_14=deficit_days[14],
         deficit_day_30=deficit_days[30],

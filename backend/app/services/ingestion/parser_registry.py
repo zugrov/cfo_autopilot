@@ -12,7 +12,6 @@ from app.services.ingestion.bank_csv_parser import (
     ParseResult,
 )
 from app.services.ingestion.client_bank_exchange_parser import ClientBankExchangeParser
-from app.services.ingestion.onec_file_adapter import OneCOsvCsvParser
 
 
 class CsvParser(Protocol):
@@ -27,7 +26,6 @@ _REGISTRY: dict[str, CsvParser] = {
     "tbank": TinkoffCsvParser(),
     "client_bank_exchange": ClientBankExchangeParser(),
     "cbe": ClientBankExchangeParser(),
-    "onec_osv": OneCOsvCsvParser(),
 }
 
 

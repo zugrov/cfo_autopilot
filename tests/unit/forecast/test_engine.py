@@ -180,3 +180,100 @@ class TestForecastEngine:
                 horizon_days=7,
             )
             assert len(result.days) == 7
+
+    def test_receivables_increase_balance(self):
+        """Дебиторка с collection_probability > 0 увеличивает прогнозный остаток."""
+        from app.services.forecast.engine import compute_forecast
+        as_of = date(2026, 5, 22)
+        due = as_of + timedelta(days=15)
+        base = compute_forecast(
+            company_id=uuid.uuid4(),
+            current_balance=Decimal("100000"),
+            transactions=[],
+            obligations=[],
+            as_of_date=as_of,
+            horizon_days=30,
+        )
+        with_rcv = compute_forecast(
+            company_id=uuid.uuid4(),
+            current_balance=Decimal("100000"),
+            transactions=[],
+            obligations=[],
+            receivables=[{"due_date": due, "expected_amount": Decimal("50000"), "status": "open"}],
+            as_of_date=as_of,
+            horizon_days=30,
+        )
+        assert with_rcv.days[14].forecast_balance > base.days[14].forecast_balance
+
+    def test_has_receivables_flag(self):
+        from app.services.forecast.engine import compute_forecast
+        as_of = date(2026, 5, 22)
+        result = compute_forecast(
+            company_id=uuid.uuid4(),
+            current_balance=Decimal("100000"),
+            transactions=[],
+            obligations=[],
+            receivables=[{
+                "due_date": as_of + timedelta(days=10),
+                "expected_amount": Decimal("30000"),
+                "status": "open",
+            }],
+            as_of_date=as_of,
+            horizon_days=30,
+        )
+        assert result.has_receivables is True
+        assert result.has_aging_detail is True
+
+    def test_no_receivables_flags_false(self):
+        from app.services.forecast.engine import compute_forecast
+        as_of = date(2026, 5, 22)
+        result = compute_forecast(
+            company_id=uuid.uuid4(),
+            current_balance=Decimal("100000"),
+            transactions=[],
+            obligations=[],
+            as_of_date=as_of,
+            horizon_days=7,
+        )
+        assert result.has_receivables is False
+        assert result.has_aging_detail is False
+
+    def test_unknown_bucket_zero_probability_no_effect(self):
+        """unknown bucket (probability=0) не влияет на прогноз."""
+        from app.services.forecast.engine import compute_forecast
+        as_of = date(2026, 5, 22)
+        base = compute_forecast(
+            company_id=uuid.uuid4(),
+            current_balance=Decimal("100000"),
+            transactions=[],
+            obligations=[],
+            as_of_date=as_of,
+            horizon_days=30,
+        )
+        with_zero = compute_forecast(
+            company_id=uuid.uuid4(),
+            current_balance=Decimal("100000"),
+            transactions=[],
+            obligations=[],
+            receivables=[{
+                "due_date": as_of + timedelta(days=15),
+                "expected_amount": Decimal("0"),
+                "status": "open",
+            }],
+            as_of_date=as_of,
+            horizon_days=30,
+        )
+        assert base.days[-1].forecast_balance == with_zero.days[-1].forecast_balance
+
+    def test_forecast_day_has_receivable_collections_field(self):
+        from app.services.forecast.engine import compute_forecast
+        as_of = date(2026, 5, 22)
+        result = compute_forecast(
+            company_id=uuid.uuid4(),
+            current_balance=Decimal("100000"),
+            transactions=[],
+            obligations=[],
+            as_of_date=as_of,
+            horizon_days=7,
+        )
+        assert hasattr(result.days[0], "receivable_collections")
