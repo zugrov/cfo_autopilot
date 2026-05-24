@@ -32,6 +32,13 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
+export type ExplainReason = {
+  type: 'debit' | 'credit' | 'obligations'
+  label: string
+  amount: number
+  date: string | null
+}
+
 export type DashboardData = {
   has_data: boolean
   balance: number | null
@@ -39,8 +46,12 @@ export type DashboardData = {
     deficit_day_7: string | null
     deficit_day_14: string | null
     deficit_day_30: string | null
+    deficit_day_91: string | null
+    deficit_day_14_stress: string | null
+    deficit_signal: { date: string; is_stress: boolean } | null
     has_obligations: boolean
     days_preview: Array<{ date: string; balance: number }>
+    days_stress: Array<{ date: string; balance: number }>
   } | null
   obligations: Array<{
     due_date: string
@@ -49,7 +60,10 @@ export type DashboardData = {
     days_until: number
   }>
   alerts: Array<{ type: string; payload: Record<string, unknown> }>
-  explain: { headline: string; top_reason: string } | null
+  explain: {
+    headline: string
+    reasons: ExplainReason[]
+  } | null
   stale: { is_stale: boolean; hours: number | null }
   last_import_at: string | null
 }

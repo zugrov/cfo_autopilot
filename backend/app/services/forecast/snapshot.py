@@ -71,15 +71,17 @@ async def recompute_snapshot(
 
     current_balance = await _get_current_balance(db, company_id)
 
-    forecast = compute_forecast(
+    common_args = dict(
         company_id=company_id,
         current_balance=current_balance,
         transactions=transactions,
         obligations=obligations,
         as_of_date=as_of,
         horizon_days=91,
-        scenario="base",
     )
+
+    forecast = compute_forecast(**common_args, scenario="base")
+    forecast_stress = compute_forecast(**common_args, scenario="stress")
 
     forecast_json = {
         "days": [
@@ -91,10 +93,21 @@ async def recompute_snapshot(
             }
             for d in forecast.days
         ],
+        "days_stress": [
+            {
+                "date": d.day.isoformat(),
+                "balance": float(d.forecast_balance),
+            }
+            for d in forecast_stress.days
+        ],
         "deficit_day_7": forecast.deficit_day_7.isoformat() if forecast.deficit_day_7 else None,
         "deficit_day_14": forecast.deficit_day_14.isoformat() if forecast.deficit_day_14 else None,
         "deficit_day_30": forecast.deficit_day_30.isoformat() if forecast.deficit_day_30 else None,
         "deficit_day_91": forecast.deficit_day_91.isoformat() if forecast.deficit_day_91 else None,
+        "deficit_day_7_stress": forecast_stress.deficit_day_7.isoformat() if forecast_stress.deficit_day_7 else None,
+        "deficit_day_14_stress": forecast_stress.deficit_day_14.isoformat() if forecast_stress.deficit_day_14 else None,
+        "deficit_day_30_stress": forecast_stress.deficit_day_30.isoformat() if forecast_stress.deficit_day_30 else None,
+        "deficit_day_91_stress": forecast_stress.deficit_day_91.isoformat() if forecast_stress.deficit_day_91 else None,
         "has_obligations": forecast.has_obligations,
     }
 

@@ -111,6 +111,24 @@ async def dashboard_today(
     balance = float(snap[0])
     forecast_json = snap[1]
 
+    # B3: берём ранний кассовый разрыв из base или stress
+    def _earliest_deficit(base_key: str, stress_key: str) -> dict | None:
+        base_val = forecast_json.get(base_key)
+        stress_val = forecast_json.get(stress_key)
+        if not base_val and not stress_val:
+            return None
+        if base_val and stress_val:
+            is_stress = stress_val < base_val
+            return {"date": stress_val if is_stress else base_val, "is_stress": is_stress}
+        if stress_val:
+            return {"date": stress_val, "is_stress": True}
+        return {"date": base_val, "is_stress": False}
+
+    deficit_signal = _earliest_deficit("deficit_day_14", "deficit_day_14_stress")
+    if not deficit_signal:
+        # расширяем до 30 дней если в 14 нет
+        deficit_signal = _earliest_deficit("deficit_day_30", "deficit_day_30_stress")
+
     return {
         "has_data": True,
         "balance": balance,
@@ -119,14 +137,25 @@ async def dashboard_today(
             "deficit_day_14": forecast_json.get("deficit_day_14"),
             "deficit_day_30": forecast_json.get("deficit_day_30"),
             "deficit_day_91": forecast_json.get("deficit_day_91"),
+            "deficit_day_14_stress": forecast_json.get("deficit_day_14_stress"),
+            "deficit_signal": deficit_signal,
             "has_obligations": forecast_json.get("has_obligations", False),
-            "days_preview": forecast_json.get("days", [])[:30],
+            "days_preview": forecast_json.get("days", []),
+            "days_stress": forecast_json.get("days_stress", []),
         },
         "obligations": obligations,
         "alerts": alerts,
         "explain": {
             "headline": explain.headline,
-            "top_reason": explain.top_reason,
+            "reasons": [
+                {
+                    "type": r.type,
+                    "label": r.label,
+                    "amount": r.amount,
+                    "date": r.date,
+                }
+                for r in explain.reasons
+            ],
         },
         "stale": {"is_stale": is_stale, "hours": stale_hours},
         "last_import_at": last_import_at.isoformat() if last_import_at else None,

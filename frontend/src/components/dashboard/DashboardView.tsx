@@ -1,8 +1,16 @@
 'use client'
 
-import { DashboardData } from '@/lib/api'
+import { DashboardData, ExplainReason } from '@/lib/api'
 import { Badge, Card, Skeleton } from '@/components/ui'
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts'
 
 type Props = {
   data: DashboardData | null
@@ -17,6 +25,44 @@ function formatRub(amount: number): string {
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
+}
+
+function daysUntil(iso: string): number {
+  return Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000)
+}
+
+function ReasonIcon({ type }: { type: string }) {
+  if (type === 'debit') return <span className="text-red-500">↓</span>
+  if (type === 'credit') return <span className="text-green-600">↑</span>
+  return <span className="text-amber-500">📅</span>
+}
+
+function ExplainBlock({ explain }: { explain: NonNullable<DashboardData['explain']> }) {
+  if (!explain.reasons.length) return null
+  return (
+    <Card>
+      <p className="text-xs text-neutral-400 uppercase tracking-wide font-medium mb-2">
+        Объяснение
+      </p>
+      <p className="text-xs text-neutral-500 mb-3">{explain.headline}</p>
+      <div className="space-y-2">
+        {explain.reasons.map((r: ExplainReason, i: number) => (
+          <div key={i} className="flex items-start justify-between gap-2">
+            <div className="flex items-start gap-1.5 min-w-0 flex-1">
+              <ReasonIcon type={r.type} />
+              <p className="text-sm text-neutral-700 truncate">{r.label}</p>
+            </div>
+            <div className="text-right shrink-0">
+              <p className="text-sm font-medium text-neutral-900">{formatRub(r.amount)}</p>
+              {r.date && (
+                <p className="text-xs text-neutral-400">{formatDate(r.date)}</p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
 }
 
 export function DashboardView({ data, isLoading, error, onUploadClick }: Props) {
@@ -65,16 +111,23 @@ export function DashboardView({ data, isLoading, error, onUploadClick }: Props) 
 
   const { balance, forecast, obligations, alerts, explain, stale } = data
 
-  const deficitDays = forecast?.deficit_day_14
-    ? Math.ceil(
-        (new Date(forecast.deficit_day_14).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
-      )
-    : null
+  // B3: сигнал кассового разрыва — ранний из base/stress
+  const deficitSignal = forecast?.deficit_signal
+  const deficitDays = deficitSignal ? daysUntil(deficitSignal.date) : null
 
-  const chartData = forecast?.days_preview?.map((d) => ({
-    date: formatDate(d.date),
-    balance: d.balance,
+  // Объединяем base + stress для графика
+  const baseMap = new Map((forecast?.days_preview ?? []).map((d) => [d.date, d.balance]))
+  const stressMap = new Map((forecast?.days_stress ?? []).map((d) => [d.date, d.balance]))
+  const allDates = [...new Set([...baseMap.keys(), ...stressMap.keys()])].sort()
+
+  const chartData = allDates.map((date) => ({
+    date: formatDate(date),
+    base: baseMap.get(date) ?? null,
+    stress: stressMap.get(date) ?? null,
   }))
+
+  const hasStress = stressMap.size > 0
+  const isDeficitRisk = deficitDays !== null && deficitDays <= 30
 
   return (
     <div className="space-y-4 p-4 max-w-lg mx-auto">
@@ -98,24 +151,25 @@ export function DashboardView({ data, isLoading, error, onUploadClick }: Props) 
         </div>
       </Card>
 
-      {/* 2. ДЕФИЦИТ — alert badge */}
-      {deficitDays !== null && deficitDays <= 14 && (
+      {/* 2. КАССОВЫЙ РАЗРЫВ — B3 сигнал */}
+      {deficitDays !== null && deficitDays <= 30 && (
         <Card className="border-alert/30 bg-alert-soft">
-          <div className="flex items-center gap-2">
-            <span className="text-alert text-lg">⚠</span>
+          <div className="flex items-start gap-2">
+            <span className="text-alert text-lg shrink-0">⚠</span>
             <div>
               <p className="font-semibold text-alert text-sm">
-                Кассовый разрыв через {deficitDays} дней
+                Кассовый разрыв{deficitSignal?.is_stress ? ' возможен' : ''} через {deficitDays} дней
               </p>
               <p className="text-xs text-alert/70">
-                {formatDate(forecast!.deficit_day_14!)}
+                {formatDate(deficitSignal!.date)}
+                {deficitSignal?.is_stress && ' · если поступления −15%'}
               </p>
             </div>
           </div>
         </Card>
       )}
 
-      {/* No obligations warning */}
+      {/* Нет обязательств — прогноз неполный */}
       {forecast && !forecast.has_obligations && (
         <Card className="border-warn/30 bg-warn-soft">
           <p className="text-xs text-warn font-medium">
@@ -148,38 +202,63 @@ export function DashboardView({ data, isLoading, error, onUploadClick }: Props) 
         </Card>
       )}
 
-      {/* ОБЪЯСНЕНИЕ */}
-      {explain?.top_reason && (
-        <Card>
-          <p className="text-xs text-neutral-400 uppercase tracking-wide font-medium mb-1">
-            Главная причина изменения
-          </p>
-          <p className="text-sm text-neutral-700">{explain.top_reason}</p>
-        </Card>
-      )}
+      {/* 4. ОБЪЯСНЕНИЕ — C2 top-3 */}
+      {explain && <ExplainBlock explain={explain} />}
 
-      {/* 4. SPARKLINE прогноза */}
-      {chartData && chartData.length > 0 && (
+      {/* 5. КАССОВЫЙ ПРОГНОЗ 90 дней — A2+E3 */}
+      {chartData.length > 0 && (
         <Card>
           <p className="text-xs text-neutral-400 uppercase tracking-wide font-medium mb-3">
-            Прогноз 30 дней
+            Кассовый прогноз, 90 дней
           </p>
-          <ResponsiveContainer width="100%" height={80}>
-            <LineChart data={chartData}>
-              <XAxis dataKey="date" hide />
+          <ResponsiveContainer width="100%" height={120}>
+            <LineChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+              <XAxis
+                dataKey="date"
+                tick={{ fontSize: 9, fill: '#9ca3af' }}
+                interval={Math.floor(chartData.length / 4)}
+                tickLine={false}
+                axisLine={false}
+              />
               <YAxis hide />
               <Tooltip
-                formatter={(v: number) => [formatRub(v), 'Прогноз']}
-                labelStyle={{ fontSize: 11 }}
-                contentStyle={{ fontSize: 12, borderRadius: 6 }}
+                formatter={(v: number, name: string) => [
+                  formatRub(v),
+                  name === 'base' ? 'По текущим данным' : 'Если поступления −15%',
+                ]}
+                labelStyle={{ fontSize: 10 }}
+                contentStyle={{ fontSize: 11, borderRadius: 6 }}
               />
+              {hasStress && (
+                <Legend
+                  formatter={(value) =>
+                    value === 'base' ? 'По текущим данным' : 'Если поступления −15%'
+                  }
+                  iconType="line"
+                  wrapperStyle={{ fontSize: 10, paddingTop: 4 }}
+                />
+              )}
               <Line
                 type="monotone"
-                dataKey="balance"
-                stroke={deficitDays !== null && deficitDays <= 30 ? '#D93B3B' : '#1B4F8A'}
+                dataKey="base"
+                name="base"
+                stroke={isDeficitRisk ? '#D93B3B' : '#1B4F8A'}
                 strokeWidth={2}
                 dot={false}
+                connectNulls
               />
+              {hasStress && (
+                <Line
+                  type="monotone"
+                  dataKey="stress"
+                  name="stress"
+                  stroke="#F59E0B"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 3"
+                  dot={false}
+                  connectNulls
+                />
+              )}
             </LineChart>
           </ResponsiveContainer>
         </Card>
