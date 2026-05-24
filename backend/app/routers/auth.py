@@ -12,7 +12,7 @@ from sqlalchemy import text
 from pydantic import BaseModel, EmailStr
 
 from app.core.database import get_db
-from app.core.auth import create_access_token
+from app.core.auth import create_access_token, CurrentUser
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -91,3 +91,26 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
         company_id=str(company_id),
         user_id=str(user_id),
     )
+
+
+class TelegramRequest(BaseModel):
+    telegram_chat_id: str
+
+
+@router.patch("/me/telegram", summary="Привязать Telegram chat_id к аккаунту")
+async def set_telegram(
+    body: TelegramRequest,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Сохраняет telegram_chat_id пользователя — после этого бот начнёт присылать дайджест."""
+    await db.execute(
+        text("SELECT set_config('app.company_id', :cid, true)"),
+        {"cid": str(current_user.company_id)},
+    )
+    await db.execute(
+        text('UPDATE "user" SET telegram_chat_id = :tid WHERE id = :uid'),
+        {"tid": body.telegram_chat_id, "uid": current_user.id},
+    )
+    await db.commit()
+    return {"status": "ok", "telegram_chat_id": body.telegram_chat_id}

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { api, DashboardData } from '@/lib/api'
 import { DashboardView } from '@/components/dashboard/DashboardView'
 import { UploadModal } from '@/components/dashboard/UploadModal'
+import { ObligationsPanel } from '@/components/dashboard/ObligationsPanel'
 
 type AuthMode = 'login' | 'register'
 
@@ -106,12 +107,99 @@ function AuthForm({ onSuccess }: { onSuccess: () => void }) {
   )
 }
 
+function TelegramModal({ onClose }: { onClose: () => void }) {
+  const [chatId, setChatId] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSaving(true)
+    setError(null)
+    try {
+      await api.updateTelegram(chatId.trim())
+      setSaved(true)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Ошибка сохранения')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="relative bg-white w-full sm:max-w-sm sm:rounded-xl shadow-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-neutral-900">Настройки Telegram</h2>
+          <button
+            onClick={onClose}
+            className="text-neutral-400 hover:text-neutral-600 transition-colors text-lg leading-none"
+          >
+            ×
+          </button>
+        </div>
+
+        {saved ? (
+          <div className="text-center py-4">
+            <p className="text-sm font-medium text-green-700 mb-1">Сохранено!</p>
+            <p className="text-xs text-neutral-500">
+              Дайджест будет приходить каждое утро в 08:00
+            </p>
+            <button
+              onClick={onClose}
+              className="mt-4 px-4 py-1.5 text-xs bg-neutral-900 text-white rounded hover:bg-neutral-800 transition-colors"
+            >
+              Закрыть
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleSave} className="space-y-3">
+            <div className="bg-neutral-50 rounded-lg p-3 text-xs text-neutral-600 space-y-1">
+              <p className="font-medium">Как найти свой Telegram Chat ID:</p>
+              <ol className="list-decimal list-inside space-y-0.5">
+                <li>Откройте Telegram</li>
+                <li>Напишите боту <span className="font-mono">@userinfobot</span></li>
+                <li>Скопируйте ваш <span className="font-mono">Id</span></li>
+              </ol>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-neutral-700 mb-1">
+                Telegram Chat ID
+              </label>
+              <input
+                type="text"
+                value={chatId}
+                onChange={(e) => setChatId(e.target.value)}
+                required
+                placeholder="123456789"
+                className="w-full px-3 py-2 text-sm border border-neutral-200 rounded outline-none focus:border-neutral-400"
+              />
+            </div>
+            {error && <p className="text-xs text-red-500">{error}</p>}
+            <button
+              type="submit"
+              disabled={isSaving || !chatId.trim()}
+              className="w-full py-2 text-sm font-medium bg-neutral-900 text-white rounded hover:bg-neutral-800 disabled:opacity-50 transition-colors"
+            >
+              {isSaving ? 'Сохранение…' : 'Сохранить'}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function HomePage() {
   const [token, setToken] = useState<string | null>(null)
   const [data, setData] = useState<DashboardData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showUpload, setShowUpload] = useState(false)
+  const [showObligations, setShowObligations] = useState(false)
+  const [showTelegram, setShowTelegram] = useState(false)
 
   useEffect(() => {
     const stored = localStorage.getItem('access_token')
@@ -158,10 +246,23 @@ export default function HomePage() {
         <h1 className="text-base font-semibold text-neutral-900">Финансовый автопилот</h1>
         <div className="flex items-center gap-3">
           <button
+            onClick={() => setShowObligations(true)}
+            className="text-xs font-medium text-neutral-600 hover:text-neutral-900 transition-colors"
+          >
+            Обязательства
+          </button>
+          <button
             onClick={() => setShowUpload(true)}
             className="text-xs font-medium text-trust hover:text-trust-dark transition-colors"
           >
             + Выписка
+          </button>
+          <button
+            onClick={() => setShowTelegram(true)}
+            className="text-xs text-neutral-400 hover:text-neutral-600 transition-colors"
+            title="Настроить Telegram-дайджест"
+          >
+            Telegram
           </button>
           <button
             onClick={handleLogout}
@@ -186,6 +287,17 @@ export default function HomePage() {
           onSuccess={fetchDashboard}
           onClose={() => setShowUpload(false)}
         />
+      )}
+
+      {showObligations && (
+        <ObligationsPanel
+          onClose={() => setShowObligations(false)}
+          onRefreshDashboard={fetchDashboard}
+        />
+      )}
+
+      {showTelegram && (
+        <TelegramModal onClose={() => setShowTelegram(false)} />
       )}
     </>
   )

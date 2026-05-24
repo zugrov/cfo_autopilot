@@ -54,6 +54,15 @@ export type DashboardData = {
   last_import_at: string | null
 }
 
+export type ObligationItem = {
+  id: string
+  due_date: string
+  amount: number
+  description: string
+  status: string
+  is_recurring: boolean
+}
+
 export const api = {
   getDashboard: () => apiFetch<DashboardData>('/dashboard/today'),
 
@@ -80,6 +89,29 @@ export const api = {
       body: fd,
     }).then((r) => r.json())
   },
+
+  listObligations: () =>
+    apiFetch<{ obligations: ObligationItem[] }>('/obligations'),
+
+  createObligation: (data: {
+    due_date: string
+    amount: number
+    description: string
+    is_recurring?: boolean
+  }) =>
+    apiFetch<{ id: string; status: string }>('/obligations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  payObligation: (id: string) =>
+    apiFetch<{ status: string }>(`/obligations/${id}/pay`, { method: 'PATCH' }),
+
+  updateTelegram: (telegramChatId: string) =>
+    apiFetch<{ status: string; telegram_chat_id: string }>('/auth/me/telegram', {
+      method: 'PATCH',
+      body: JSON.stringify({ telegram_chat_id: telegramChatId }),
+    }),
 
   askAI: (question: string) =>
     apiFetch<{ answer: string; provider: string; cached: boolean }>('/ai/chat', {
