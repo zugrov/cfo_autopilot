@@ -1,12 +1,14 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { api, DashboardData, UserMe } from '@/lib/api'
+import { api, DashboardData, UserMe, OnboardingStatus } from '@/lib/api'
 import { DashboardView } from '@/components/dashboard/DashboardView'
 import { UploadModal } from '@/components/dashboard/UploadModal'
 import { ObligationsPanel } from '@/components/dashboard/ObligationsPanel'
 import { AiChatPanel } from '@/components/dashboard/AiChatPanel'
 import { TransactionsPanel } from '@/components/dashboard/TransactionsPanel'
+import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard'
+import { OnboardingBanner } from '@/components/onboarding/OnboardingBanner'
 
 type AuthMode = 'login' | 'register'
 
@@ -213,6 +215,7 @@ export default function HomePage() {
   const [showTelegram, setShowTelegram] = useState(false)
   const [showAiChat, setShowAiChat] = useState(false)
   const [showTransactions, setShowTransactions] = useState(false)
+  const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null)
 
   const canImport = user?.role !== 'viewer'
   const canEditObligations = user?.role !== 'viewer'
@@ -229,6 +232,15 @@ export default function HomePage() {
       setUser(me)
     } catch {
       setUser(null)
+    }
+  }, [])
+
+  const fetchOnboarding = useCallback(async () => {
+    try {
+      const status = await api.getOnboardingStatus()
+      setOnboarding(status)
+    } catch {
+      setOnboarding(null)
     }
   }, [])
 
@@ -254,18 +266,35 @@ export default function HomePage() {
     if (token) {
       fetchUser()
       fetchDashboard()
+      fetchOnboarding()
     }
-  }, [token, fetchUser, fetchDashboard])
+  }, [token, fetchUser, fetchDashboard, fetchOnboarding])
+
+  const handleOnboardingComplete = useCallback(async () => {
+    await Promise.all([fetchOnboarding(), fetchDashboard(), fetchUser()])
+  }, [fetchOnboarding, fetchDashboard, fetchUser])
 
   const handleLogout = () => {
     localStorage.removeItem('access_token')
     setToken(null)
     setUser(null)
     setData(null)
+    setOnboarding(null)
   }
 
   if (!token) {
     return <AuthForm onSuccess={() => setToken(localStorage.getItem('access_token'))} />
+  }
+
+  if (onboarding?.show_wizard && canImport) {
+    return (
+      <OnboardingWizard
+        status={onboarding}
+        isOwner={isOwner}
+        onStatusChange={setOnboarding}
+        onComplete={handleOnboardingComplete}
+      />
+    )
   }
 
   return (
@@ -318,6 +347,14 @@ export default function HomePage() {
       </header>
 
       <main className="pb-8">
+        {onboarding && (
+          <OnboardingBanner
+            status={onboarding}
+            isOwner={isOwner}
+            onUploadOneC={() => setShowUpload(true)}
+            onConnectTelegram={() => setShowTelegram(true)}
+          />
+        )}
         <DashboardView
           data={data}
           isLoading={isLoading}
@@ -330,7 +367,10 @@ export default function HomePage() {
 
       {showUpload && (
         <UploadModal
-          onSuccess={fetchDashboard}
+          onSuccess={() => {
+            fetchDashboard()
+            fetchOnboarding()
+          }}
           onClose={() => setShowUpload(false)}
         />
       )}

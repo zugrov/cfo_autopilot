@@ -38,6 +38,7 @@ class MeResponse(BaseModel):
     email: str
     role: str
     company_id: str
+    telegram_connected: bool
 
 
 @router.get("/me", response_model=MeResponse, summary="Текущий пользователь")
@@ -46,6 +47,7 @@ async def get_me(current_user: ReadUser) -> MeResponse:
         email=current_user.email,
         role=current_user.role,
         company_id=str(current_user.company_id),
+        telegram_connected=bool(current_user.telegram_chat_id),
     )
 
 

@@ -109,6 +109,22 @@ export type UserMe = {
   email: string
   role: 'owner' | 'accountant' | 'viewer'
   company_id: string
+  telegram_connected: boolean
+}
+
+export type OnboardingStep = {
+  id: 'bank' | 'onec' | 'telegram'
+  done: boolean
+  required: boolean
+  skipped: boolean
+}
+
+export type OnboardingStatus = {
+  steps: OnboardingStep[]
+  current_step: 'bank' | 'onec' | 'telegram' | null
+  show_wizard: boolean
+  show_banner: boolean
+  dismissed: boolean
 }
 
 export type TransactionItem = {
@@ -123,6 +139,17 @@ export const api = {
   getDashboard: () => apiFetch<DashboardData>('/dashboard/today'),
 
   getMe: () => apiFetch<UserMe>('/auth/me'),
+
+  getOnboardingStatus: () => apiFetch<OnboardingStatus>('/onboarding/status'),
+
+  dismissOnboarding: () =>
+    apiFetch<OnboardingStatus>('/onboarding/dismiss', { method: 'POST' }),
+
+  skipOnboardingStep: (step: 'onec' | 'telegram') =>
+    apiFetch<OnboardingStatus>('/onboarding/skip', {
+      method: 'POST',
+      body: JSON.stringify({ step }),
+    }),
 
   listTransactions: (limit = 50, offset = 0) =>
     apiFetch<{ transactions: TransactionItem[] }>(
