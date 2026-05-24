@@ -163,7 +163,8 @@ async def upload_onec_osv(
     )
 
 
-@router.get("/history", summary="История загрузок")async def import_history(
+@router.get("/history", summary="История загрузок")
+async def import_history(
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
     limit: int = 20,

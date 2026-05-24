@@ -4,7 +4,7 @@ Router: /dashboard — главный экран.
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,8 +14,11 @@ from app.core.database import get_db
 from app.core.auth import CurrentUser
 from app.services.explain.engine import explain_balance_change
 from app.services.signals.cash_gap import compute_cash_gap_signal
+from app.services.reconciliation.engine import compute_reconciliation
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+
+_RECON_LOOKBACK_DAYS = 90
 
 
 @router.get("/today", summary="Главный экран: остаток + прогноз + сигналы")
@@ -96,6 +99,7 @@ async def dashboard_today(
             "forecast": None,
             "obligations": obligations,
             "explain": None,
+            "reconciliation": None,
             "stale": {"is_stale": is_stale, "hours": stale_hours},
             "last_import_at": last_import_at.isoformat() if last_import_at else None,
         }
@@ -164,6 +168,10 @@ async def dashboard_today(
         else None
     )
 
+    reconciliation = await _build_reconciliation(
+        db, cid, today, buckets_raw is not None
+    )
+
     return {
         "has_data": True,
         "balance": balance,
@@ -200,8 +208,85 @@ async def dashboard_today(
             ],
         },
         "receivables": receivables_summary,
+        "reconciliation": reconciliation,
         "stale": {"is_stale": is_stale, "hours": stale_hours},
         "last_import_at": last_import_at.isoformat() if last_import_at else None,
+    }
+
+
+async def _build_reconciliation(
+    db: AsyncSession,
+    cid: uuid.UUID,
+    today: date,
+    has_onec_receivables: bool,
+) -> dict | None:
+    """Сверка банк vs 1С — только если подключены оба источника."""
+    if not has_onec_receivables:
+        return None
+
+    since = today - timedelta(days=_RECON_LOOKBACK_DAYS)
+    bank_row = await db.execute(
+        text(
+            "SELECT counterparty_raw, amount, txn_date "
+            "FROM transaction "
+            "WHERE company_id = :cid AND direction = 'credit' "
+            "  AND txn_date >= :since"
+        ),
+        {"cid": cid, "since": since},
+    )
+    bank_raw = bank_row.fetchall()
+    if not bank_raw:
+        return None
+
+    rcv_row = await db.execute(
+        text(
+            "SELECT c.name, r.amount, r.due_date, r.status "
+            "FROM receivable r "
+            "LEFT JOIN counterparty c ON r.counterparty_id = c.id "
+            "WHERE r.company_id = :cid AND r.status IN ('open', 'overdue') "
+            "  AND r.source = 'onec_osv'"
+        ),
+        {"cid": cid},
+    )
+    rcv_raw = rcv_row.fetchall()
+    if not rcv_raw:
+        return None
+
+    bank_credits = [
+        {
+            "counterparty": r[0] or "",
+            "amount": float(r[1]),
+            "txn_date": r[2],
+        }
+        for r in bank_raw
+    ]
+    receivables = [
+        {
+            "counterparty": r[0] or "",
+            "amount": float(r[1]),
+            "due_date": r[2],
+            "status": r[3],
+        }
+        for r in rcv_raw
+    ]
+
+    issues = compute_reconciliation(
+        receivables,
+        bank_credits,
+        today,
+        lookback_days=_RECON_LOOKBACK_DAYS,
+    )
+    return {
+        "has_issues": len(issues) > 0,
+        "issues": [
+            {
+                "kind": i.kind,
+                "counterparty": i.counterparty,
+                "amount": i.amount,
+                "detail": i.detail,
+            }
+            for i in issues
+        ],
     }
 
 

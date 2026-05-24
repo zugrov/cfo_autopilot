@@ -46,6 +46,13 @@ export type CashGapSignal = {
   severity: 'critical' | 'warning' | 'info'
 }
 
+export type ReconciliationIssue = {
+  kind: 'erp_only' | 'bank_only' | 'amount_mismatch'
+  counterparty: string
+  amount: number
+  detail: string
+}
+
 export type DashboardData = {
   has_data: boolean
   balance: number | null
@@ -80,6 +87,10 @@ export type DashboardData = {
       bucket: string
       due_date: string | null
     }>
+  } | null
+  reconciliation: {
+    has_issues: boolean
+    issues: ReconciliationIssue[]
   } | null
   stale: { is_stale: boolean; hours: number | null }
   last_import_at: string | null

@@ -123,6 +123,61 @@ async def test_dashboard_with_onec_receivables(client):
     assert "receivable_collections" in first_day
 
 
+async def test_dashboard_reconciliation_after_bank_and_onec(client):
+    """После импорта банка и aging ОСВ дашборд возвращает reconciliation."""
+    user = await _register(client, company="ReconDashCo")
+    headers = auth_headers(user["token"])
+
+    csv_path = f"{FIXTURES_DIR}/sber_sample.csv"
+    with open(csv_path, "rb") as f:
+        r = await client.post(
+            "/imports/bank",
+            headers=headers,
+            files={"file": ("sber_sample.csv", f, "text/csv")},
+            data={"bank_key": "sber"},
+        )
+    assert r.status_code == 201
+
+    aging_bytes = (ONEC_FIXTURES / "osv_aging_sample.csv").read_bytes()
+    r2 = await client.post(
+        "/imports/onec",
+        headers=headers,
+        files={"file": ("osv_aging_sample.csv", aging_bytes, "text/csv")},
+    )
+    assert r2.status_code == 201
+
+    resp = await client.get("/dashboard/today", headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert data["reconciliation"] is not None
+    assert "has_issues" in data["reconciliation"]
+    assert "issues" in data["reconciliation"]
+    assert isinstance(data["reconciliation"]["issues"], list)
+
+
+async def test_dashboard_no_reconciliation_bank_only(client):
+    """Только банк — reconciliation == null."""
+    user = await _register(client, company="BankOnlyReconCo")
+    headers = auth_headers(user["token"])
+
+    csv_path = f"{FIXTURES_DIR}/sber_sample.csv"
+    with open(csv_path, "rb") as f:
+        r = await client.post(
+            "/imports/bank",
+            headers=headers,
+            files={"file": ("sber_sample.csv", f, "text/csv")},
+            data={"bank_key": "sber"},
+        )
+    assert r.status_code == 201
+
+    resp = await client.get("/dashboard/today", headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert data["reconciliation"] is None
+
+
 async def test_dashboard_plain_onec_no_aging_detail(client):
     """После plain ОСВ has_aging_detail=False, receivables=None (probability=0)."""
     user = await _register(client, company="PlainDashCo")

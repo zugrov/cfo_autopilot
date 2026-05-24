@@ -1,6 +1,7 @@
 'use client'
 
-import { DashboardData, ExplainReason, CashGapSignal } from '@/lib/api'import { Badge, Card, Skeleton } from '@/components/ui'
+import { DashboardData, ExplainReason, CashGapSignal, ReconciliationIssue } from '@/lib/api'
+import { Badge, Card, Skeleton } from '@/components/ui'
 import {
   LineChart,
   Line,
@@ -128,6 +129,51 @@ function ReceivablesCard({ receivables }: { receivables: NonNullable<DashboardDa
   )
 }
 
+const RECON_KIND_LABELS: Record<ReconciliationIssue['kind'], string> = {
+  erp_only: 'В 1С, нет в банке',
+  bank_only: 'В банке, нет в 1С',
+  amount_mismatch: 'Суммы не сходятся',
+}
+
+const RECON_KIND_ICONS: Record<ReconciliationIssue['kind'], string> = {
+  erp_only: '📒',
+  bank_only: '🏦',
+  amount_mismatch: '⚖️',
+}
+
+function ReconciliationCard({
+  reconciliation,
+}: {
+  reconciliation: NonNullable<DashboardData['reconciliation']>
+}) {
+  if (!reconciliation.has_issues) return null
+  return (
+    <Card className="border-warn/30">
+      <p className="text-xs text-neutral-400 uppercase tracking-wide font-medium mb-3">
+        Расхождения банк / 1С
+      </p>
+      <div className="space-y-2">
+        {reconciliation.issues.map((issue, i) => (
+          <div key={i} className="flex items-start justify-between gap-2">
+            <div className="flex items-start gap-1.5 min-w-0 flex-1">
+              <span className="text-sm shrink-0">{RECON_KIND_ICONS[issue.kind]}</span>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-neutral-800 truncate">
+                  {issue.counterparty}
+                </p>
+                <p className="text-xs text-neutral-500">{RECON_KIND_LABELS[issue.kind]}</p>
+              </div>
+            </div>
+            <p className="text-sm font-semibold text-neutral-800 shrink-0">
+              {formatRub(issue.amount)}
+            </p>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 function ExplainBlock({ explain }: { explain: NonNullable<DashboardData['explain']> }) {
   if (!explain.reasons.length) return null
   return (
@@ -200,7 +246,7 @@ export function DashboardView({ data, isLoading, error, onUploadClick }: Props) 
     )
   }
 
-  const { balance, forecast, obligations, explain, stale, receivables } = data
+  const { balance, forecast, obligations, explain, stale, receivables, reconciliation } = data
 
   const deficitSignal = forecast?.deficit_signal ?? null
   const hasAgingDetail = forecast?.has_aging_detail ?? false
@@ -295,6 +341,10 @@ export function DashboardView({ data, isLoading, error, onUploadClick }: Props) 
       {/* 4. ДЕБИТОРКА (1С) */}
       {receivables && receivables.total_open > 0 && (
         <ReceivablesCard receivables={receivables} />
+      )}
+
+      {reconciliation?.has_issues && (
+        <ReconciliationCard reconciliation={reconciliation} />
       )}
 
       {/* 5. ОБЪЯСНЕНИЕ — top-3 drivers */}
