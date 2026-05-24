@@ -1,22 +1,24 @@
 """
-SignalEngine — генерирует сигналы дефицита и stale data.
+SignalEngine — генерирует сигнал кассового разрыва.
 
-Сигналы idempotent: один сигнал на (company, type, date_bucket).
+Сигналы idempotent: один сигнал на (company, alert_type, date_bucket).
+Sprint A: только cash_gap; stale/no_obligations считаются inline в dashboard.
 """
 from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
+from datetime import date
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
+from app.services.signals.cash_gap import compute_cash_gap_signal
+
 
 @dataclass
 class Signal:
-    alert_type: str  # deficit_7d | deficit_14d | deficit_30d | deficit_91d | stale_data
+    alert_type: str  # cash_gap
     severity: str    # critical | warning | info
     message: str
     date_bucket: date
@@ -28,51 +30,35 @@ async def evaluate_signals(
     company_id: uuid.UUID,
     as_of: date,
     forecast_json: dict,
-    last_import_at: datetime | None,
+    last_import_at: object = None,  # оставлен для обратной совместимости вызовов
 ) -> list[Signal]:
-    """Вычисляет активные сигналы для компании."""
+    """Вычисляет активные сигналы для компании.
+
+    Единственный персистентный сигнал — cash_gap.
+    stale_data и no_obligations — состояние данных, считается inline.
+    """
     signals: list[Signal] = []
 
-    # Сигналы дефицита
-    for horizon, key in [(7, "deficit_day_7"), (14, "deficit_day_14"), (30, "deficit_day_30"), (91, "deficit_day_91")]:
-        deficit_date = forecast_json.get(key)
-        if deficit_date:
-            d = date.fromisoformat(deficit_date)
-            signals.append(
-                Signal(
-                    alert_type=f"deficit_{horizon}d",
-                    severity="critical" if horizon <= 14 else "warning",
-                    message=f"Кассовый разрыв прогнозируется через {(d - as_of).days} дней ({d.strftime('%d.%m.%Y')})",
-                    date_bucket=d,
-                    payload={"deficit_date": deficit_date, "horizon_days": horizon},
-                )
-            )
-
-    # Stale data: нет импорта > 24 часов
-    if last_import_at:
-        now_utc = datetime.now(timezone.utc)
-        last_import_aware = last_import_at if last_import_at.tzinfo else last_import_at.replace(tzinfo=timezone.utc)
-        hours_stale = (now_utc - last_import_aware).total_seconds() / 3600
-        if hours_stale > 24:
-            signals.append(
-                Signal(
-                    alert_type="stale_data",
-                    severity="warning",
-                    message=f"Данные не обновлялись {int(hours_stale)} ч.",
-                    date_bucket=as_of,
-                    payload={"hours_stale": int(hours_stale), "last_import_at": last_import_at.isoformat()},
-                )
-            )
-
-    # Нет обязательств — прогноз неполный
-    if not forecast_json.get("has_obligations"):
+    gap = compute_cash_gap_signal(forecast_json, as_of)
+    if gap is not None:
+        verb = {
+            "critical": "Кассовый разрыв через",
+            "warning": "Кассовый разрыв возможен через",
+            "info": "Риск кассового разрыва через",
+        }[gap.severity]
+        stress_note = " (стресс-сценарий)" if gap.is_stress else ""
         signals.append(
             Signal(
-                alert_type="no_obligations",
-                severity="info",
-                message="Прогноз неполный — добавьте обязательства для точности",
-                date_bucket=as_of,
-                payload={},
+                alert_type="cash_gap",
+                severity=gap.severity,
+                message=f"{verb} {gap.days_until} дней ({gap.date.strftime('%d.%m.%Y')}){stress_note}",
+                date_bucket=gap.date,
+                payload={
+                    "deficit_date": gap.date.isoformat(),
+                    "days_until": gap.days_until,
+                    "is_stress": gap.is_stress,
+                    "severity": gap.severity,
+                },
             )
         )
 

@@ -13,6 +13,7 @@ from sqlalchemy import text
 from app.core.database import get_db
 from app.core.auth import CurrentUser
 from app.services.explain.engine import explain_balance_change
+from app.services.signals.cash_gap import compute_cash_gap_signal
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -71,27 +72,19 @@ async def dashboard_today(
         for r in obligations_row.fetchall()
     ]
 
-    # Активные алерты
-    alerts_row = await db.execute(
-        text(
-            "SELECT alert_type, payload FROM alert "
-            "WHERE company_id = :cid AND sent_at IS NULL "
-            "ORDER BY created_at DESC LIMIT 5"
-        ),
-        {"cid": cid},
-    )
-    alerts = [{"type": r[0], "payload": r[1]} for r in alerts_row.fetchall()]
-
     # Объяснение
     explain = await explain_balance_change(db, cid, today)
 
-    # Stale data flag
+    # Stale data flag — считается inline, не персистируется
     is_stale = False
     stale_hours = None
     if last_import_at:
         from datetime import datetime, timezone
         now_utc = datetime.now(timezone.utc)
-        last_import_aware = last_import_at if last_import_at.tzinfo else last_import_at.replace(tzinfo=timezone.utc)
+        last_import_aware = (
+            last_import_at if last_import_at.tzinfo
+            else last_import_at.replace(tzinfo=timezone.utc)
+        )
         hours = (now_utc - last_import_aware).total_seconds() / 3600
         is_stale = hours > 24
         stale_hours = int(hours) if is_stale else None
@@ -102,7 +95,6 @@ async def dashboard_today(
             "balance": None,
             "forecast": None,
             "obligations": obligations,
-            "alerts": alerts,
             "explain": None,
             "stale": {"is_stale": is_stale, "hours": stale_hours},
             "last_import_at": last_import_at.isoformat() if last_import_at else None,
@@ -111,23 +103,18 @@ async def dashboard_today(
     balance = float(snap[0])
     forecast_json = snap[1]
 
-    # B3: берём ранний кассовый разрыв из base или stress
-    def _earliest_deficit(base_key: str, stress_key: str) -> dict | None:
-        base_val = forecast_json.get(base_key)
-        stress_val = forecast_json.get(stress_key)
-        if not base_val and not stress_val:
-            return None
-        if base_val and stress_val:
-            is_stress = stress_val < base_val
-            return {"date": stress_val if is_stress else base_val, "is_stress": is_stress}
-        if stress_val:
-            return {"date": stress_val, "is_stress": True}
-        return {"date": base_val, "is_stress": False}
-
-    deficit_signal = _earliest_deficit("deficit_day_14", "deficit_day_14_stress")
-    if not deficit_signal:
-        # расширяем до 30 дней если в 14 нет
-        deficit_signal = _earliest_deficit("deficit_day_30", "deficit_day_30_stress")
+    # Сигнал кассового разрыва — единый B3 с severity
+    gap = compute_cash_gap_signal(forecast_json, today)
+    deficit_signal = (
+        {
+            "date": gap.date.isoformat(),
+            "is_stress": gap.is_stress,
+            "days_until": gap.days_until,
+            "severity": gap.severity,
+        }
+        if gap is not None
+        else None
+    )
 
     return {
         "has_data": True,
@@ -137,14 +124,12 @@ async def dashboard_today(
             "deficit_day_14": forecast_json.get("deficit_day_14"),
             "deficit_day_30": forecast_json.get("deficit_day_30"),
             "deficit_day_91": forecast_json.get("deficit_day_91"),
-            "deficit_day_14_stress": forecast_json.get("deficit_day_14_stress"),
             "deficit_signal": deficit_signal,
             "has_obligations": forecast_json.get("has_obligations", False),
             "days_preview": forecast_json.get("days", []),
             "days_stress": forecast_json.get("days_stress", []),
         },
         "obligations": obligations,
-        "alerts": alerts,
         "explain": {
             "headline": explain.headline,
             "reasons": [

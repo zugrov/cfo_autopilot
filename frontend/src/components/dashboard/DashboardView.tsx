@@ -1,6 +1,6 @@
 'use client'
 
-import { DashboardData, ExplainReason } from '@/lib/api'
+import { DashboardData, ExplainReason, CashGapSignal } from '@/lib/api'
 import { Badge, Card, Skeleton } from '@/components/ui'
 import {
   LineChart,
@@ -27,14 +27,66 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
 }
 
-function daysUntil(iso: string): number {
-  return Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000)
-}
-
 function ReasonIcon({ type }: { type: string }) {
   if (type === 'debit') return <span className="text-red-500">↓</span>
   if (type === 'credit') return <span className="text-green-600">↑</span>
   return <span className="text-amber-500">📅</span>
+}
+
+const SEVERITY_CARD: Record<string, string> = {
+  critical: 'border-alert/30 bg-alert-soft',
+  warning: 'border-amber-300 bg-amber-50',
+  info: 'border-neutral-200 bg-neutral-50',
+}
+
+const SEVERITY_TEXT: Record<string, string> = {
+  critical: 'text-alert',
+  warning: 'text-amber-700',
+  info: 'text-neutral-600',
+}
+
+const SEVERITY_SUBTEXT: Record<string, string> = {
+  critical: 'text-alert/70',
+  warning: 'text-amber-600/70',
+  info: 'text-neutral-400',
+}
+
+const SEVERITY_ICON: Record<string, string> = {
+  critical: '⚠',
+  warning: '⚠',
+  info: 'ℹ',
+}
+
+function CashGapCard({ signal }: { signal: CashGapSignal }) {
+  const { severity, days_until, date: gapDate, is_stress } = signal
+  const cardClass = SEVERITY_CARD[severity] ?? SEVERITY_CARD.info
+  const textClass = SEVERITY_TEXT[severity] ?? SEVERITY_TEXT.info
+  const subClass = SEVERITY_SUBTEXT[severity] ?? SEVERITY_SUBTEXT.info
+  const icon = SEVERITY_ICON[severity] ?? 'ℹ'
+
+  const verb =
+    severity === 'critical'
+      ? 'Кассовый разрыв'
+      : severity === 'warning'
+      ? 'Кассовый разрыв возможен'
+      : 'Риск кассового разрыва'
+
+  return (
+    <Card className={cardClass}>
+      <div className="flex items-start gap-2">
+        <span className={`${textClass} text-lg shrink-0`}>{icon}</span>
+        <div>
+          <p className={`font-semibold ${textClass} text-sm`}>
+            {verb} через {days_until} дней
+          </p>
+          <p className={`text-xs ${subClass}`}>
+            {formatDate(gapDate)}
+            {is_stress && ' · если поступления −15%'}
+          </p>
+        </div>
+      </div>
+    </Card>
+  )
 }
 
 function ExplainBlock({ explain }: { explain: NonNullable<DashboardData['explain']> }) {
@@ -109,13 +161,18 @@ export function DashboardView({ data, isLoading, error, onUploadClick }: Props) 
     )
   }
 
-  const { balance, forecast, obligations, alerts, explain, stale } = data
+  const { balance, forecast, obligations, explain, stale } = data
 
-  // B3: сигнал кассового разрыва — ранний из base/stress
-  const deficitSignal = forecast?.deficit_signal
-  const deficitDays = deficitSignal ? daysUntil(deficitSignal.date) : null
+  const deficitSignal = forecast?.deficit_signal ?? null
 
-  // Объединяем base + stress для графика
+  // Цвет линии графика по severity
+  const lineColor =
+    deficitSignal?.severity === 'critical'
+      ? '#D93B3B'
+      : deficitSignal?.severity === 'warning'
+      ? '#F59E0B'
+      : '#1B4F8A'
+
   const baseMap = new Map((forecast?.days_preview ?? []).map((d) => [d.date, d.balance]))
   const stressMap = new Map((forecast?.days_stress ?? []).map((d) => [d.date, d.balance]))
   const allDates = [...new Set([...baseMap.keys(), ...stressMap.keys()])].sort()
@@ -127,7 +184,6 @@ export function DashboardView({ data, isLoading, error, onUploadClick }: Props) 
   }))
 
   const hasStress = stressMap.size > 0
-  const isDeficitRisk = deficitDays !== null && deficitDays <= 30
 
   return (
     <div className="space-y-4 p-4 max-w-lg mx-auto">
@@ -151,25 +207,10 @@ export function DashboardView({ data, isLoading, error, onUploadClick }: Props) 
         </div>
       </Card>
 
-      {/* 2. КАССОВЫЙ РАЗРЫВ — B3 сигнал */}
-      {deficitDays !== null && deficitDays <= 30 && (
-        <Card className="border-alert/30 bg-alert-soft">
-          <div className="flex items-start gap-2">
-            <span className="text-alert text-lg shrink-0">⚠</span>
-            <div>
-              <p className="font-semibold text-alert text-sm">
-                Кассовый разрыв{deficitSignal?.is_stress ? ' возможен' : ''} через {deficitDays} дней
-              </p>
-              <p className="text-xs text-alert/70">
-                {formatDate(deficitSignal!.date)}
-                {deficitSignal?.is_stress && ' · если поступления −15%'}
-              </p>
-            </div>
-          </div>
-        </Card>
-      )}
+      {/* 2. КАССОВЫЙ РАЗРЫВ — severity card, показывать при любом severity до 90д */}
+      {deficitSignal && <CashGapCard signal={deficitSignal} />}
 
-      {/* Нет обязательств — прогноз неполный */}
+      {/* Прогноз неполный — нет обязательств */}
       {forecast && !forecast.has_obligations && (
         <Card className="border-warn/30 bg-warn-soft">
           <p className="text-xs text-warn font-medium">
@@ -202,10 +243,10 @@ export function DashboardView({ data, isLoading, error, onUploadClick }: Props) 
         </Card>
       )}
 
-      {/* 4. ОБЪЯСНЕНИЕ — C2 top-3 */}
+      {/* 4. ОБЪЯСНЕНИЕ — top-3 drivers */}
       {explain && <ExplainBlock explain={explain} />}
 
-      {/* 5. КАССОВЫЙ ПРОГНОЗ 90 дней — A2+E3 */}
+      {/* 5. КАССОВЫЙ ПРОГНОЗ 90 дней */}
       {chartData.length > 0 && (
         <Card>
           <p className="text-xs text-neutral-400 uppercase tracking-wide font-medium mb-3">
@@ -242,7 +283,7 @@ export function DashboardView({ data, isLoading, error, onUploadClick }: Props) 
                 type="monotone"
                 dataKey="base"
                 name="base"
-                stroke={isDeficitRisk ? '#D93B3B' : '#1B4F8A'}
+                stroke={lineColor}
                 strokeWidth={2}
                 dot={false}
                 connectNulls

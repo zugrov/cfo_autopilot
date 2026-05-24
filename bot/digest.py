@@ -2,11 +2,12 @@
 Telegram Bot — aiogram 3.x
 
 Sprint 1b: ежедневный дайджест в 08:00 MSK.
-Sprint 2+: алерты дефицита, ответы на вопросы.
+Sprint A: format_digest_message вынесен в bot/message_builder.py.
 """
 from __future__ import annotations
 
 import logging
+from datetime import date
 
 import httpx
 from aiogram import Bot, Dispatcher, types
@@ -14,6 +15,7 @@ from aiogram.filters import CommandStart, Command
 from aiogram.enums import ParseMode
 
 from app.core.config import get_settings
+from bot.message_builder import format_digest_message, pick_top_reason
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -69,7 +71,6 @@ async def cmd_connect(message: types.Message) -> None:
     finally:
         await redis_client.aclose()
 
-    # Сохраняем telegram_chat_id через внутренний backend endpoint
     try:
         headers = {}
         if settings.telegram_webhook_secret:
@@ -99,9 +100,13 @@ async def send_digest_for_company(company_id: str) -> dict:
     """
     from sqlalchemy import text
     from app.core.database import AsyncSessionLocal
+    from app.services.explain.engine import explain_balance_change
+    from app.services.signals.cash_gap import compute_cash_gap_signal
     import uuid
+    from datetime import datetime, timezone
 
     cid = uuid.UUID(company_id)
+    today = date.today()
     sent_count = 0
 
     async with AsyncSessionLocal() as db:
@@ -109,7 +114,6 @@ async def send_digest_for_company(company_id: str) -> dict:
             text("SELECT set_config('app.company_id', :cid, true)"), {"cid": company_id}
         )
 
-        # Получаем пользователей с telegram_chat_id
         users_result = await db.execute(
             text(
                 'SELECT telegram_chat_id FROM "user" '
@@ -122,14 +126,12 @@ async def send_digest_for_company(company_id: str) -> dict:
         if not chat_ids:
             return {"sent": 0, "company_id": company_id}
 
-        # Получаем снапшот
-        from datetime import date
         snap_result = await db.execute(
             text(
                 "SELECT balance, forecast_json FROM daily_cash_snapshot "
                 "WHERE company_id = :cid AND snapshot_date = :today"
             ),
-            {"cid": cid, "today": date.today()},
+            {"cid": cid, "today": today},
         )
         snap = snap_result.fetchone()
 
@@ -140,21 +142,46 @@ async def send_digest_for_company(company_id: str) -> dict:
             )
         else:
             balance = float(snap[0])
-            forecast = snap[1]
-            deficit_14 = forecast.get("deficit_day_14")
+            forecast_json = snap[1]
 
-            deficit_line = ""
-            if deficit_14:
-                from datetime import datetime
-                d = date.fromisoformat(deficit_14)
-                days_left = (d - date.today()).days
-                deficit_line = f"\n⚠️ <b>Кассовый разрыв</b> через {days_left} дней ({d.strftime('%d.%m')})"
+            last_import_row = await db.execute(
+                text(
+                    "SELECT MAX(updated_at) FROM import_batch "
+                    "WHERE company_id = :cid AND status IN ('done', 'partial')"
+                ),
+                {"cid": cid},
+            )
+            last_import_at = last_import_row.scalar()
+            is_stale = False
+            stale_hours = None
+            if last_import_at:
+                now_utc = datetime.now(timezone.utc)
+                last_aware = (
+                    last_import_at if last_import_at.tzinfo
+                    else last_import_at.replace(tzinfo=timezone.utc)
+                )
+                hours = (now_utc - last_aware).total_seconds() / 3600
+                is_stale = hours > 24
+                stale_hours = int(hours) if is_stale else None
 
-            text_msg = (
-                f"📊 <b>Финансовый автопилот</b> — {date.today().strftime('%d.%m.%Y')}\n\n"
-                f"💰 Остаток: <b>₽{balance:,.0f}</b>".replace(",", " ")
-                + deficit_line
-                + "\n\n<i>Открыть подробности →</i> личный кабинет"
+            explain = await explain_balance_change(db, cid, today)
+            cash_gap = compute_cash_gap_signal(forecast_json, today)
+
+            reason_label, reason_amount, reason_type = pick_top_reason(
+                [{"type": r.type, "label": r.label, "amount": r.amount} for r in explain.reasons],
+                explain.headline,
+            )
+
+            text_msg = format_digest_message(
+                snap_date=today,
+                balance=balance,
+                cash_gap=cash_gap,
+                explain_headline=explain.headline,
+                top_reason_label=reason_label,
+                top_reason_amount=reason_amount,
+                top_reason_type=reason_type,
+                is_stale=is_stale,
+                stale_hours=stale_hours,
             )
 
         for chat_id in chat_ids:

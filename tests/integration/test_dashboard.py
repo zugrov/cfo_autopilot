@@ -37,6 +37,26 @@ async def test_dashboard_with_data(client):
     assert "days_preview" in data["forecast"]
     assert len(data["forecast"]["days_preview"]) > 0
 
+    # Sprint A: alerts удалён из ответа
+    assert "alerts" not in data, "alerts[] должен быть удалён из API (f1)"
+
+    # Sprint 2: stress-сценарий
+    assert "days_stress" in data["forecast"], "days_stress отсутствует"
+
+    # Sprint 2: объяснение
+    assert "explain" in data and data["explain"] is not None
+    assert "reasons" in data["explain"]
+
+    # Sprint 2: минимум 90 дней прогноза
+    assert len(data["forecast"]["days_preview"]) >= 90, "Прогноз должен быть не менее 90 дней"
+
+    # Sprint A: deficit_signal содержит severity если есть
+    ds = data["forecast"].get("deficit_signal")
+    if ds is not None:
+        assert "severity" in ds, "deficit_signal должен содержать severity"
+        assert ds["severity"] in ("critical", "warning", "info")
+        assert "days_until" in ds
+
 
 async def test_dashboard_empty_before_import(client):
     """Новая компания без импорта видит has_data=False."""
