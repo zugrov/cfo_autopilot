@@ -125,6 +125,29 @@ async def _call_yandexgpt(prompt: str, system: str) -> str:
         return resp.json()["result"]["alternatives"][0]["message"]["text"]
 
 
+def _local_fallback_answer(question: str, context: str) -> str:
+    """Ответ без LLM — по контексту из БД (MVP без ключей)."""
+    q = question.lower()
+    if not context or context == "Данные не загружены":
+        return "Загрузите банковскую выписку, чтобы я мог ответить по вашим цифрам."
+
+    if any(w in q for w in ("сколько", "остат", "счет", "счёт", "денег")):
+        for line in context.split("\n"):
+            if "Остаток" in line:
+                return line
+
+    if any(w in q for w in ("разрыв", "дефицит", "кассов")):
+        for line in context.split("\n"):
+            if "разрыв" in line.lower():
+                return line
+        return "По текущим данным кассовый разрыв в ближайшие 30 дней не прогнозируется."
+
+    if any(w in q for w in ("изменил", "почему", "7 дней", "недел")):
+        return f"Кратко по данным:\n{context}"
+
+    return f"По имеющимся данным:\n{context}"
+
+
 async def ask_llm(
     question: str,
     context: str,
@@ -150,23 +173,46 @@ async def ask_llm(
     )
     prompt = f"Данные компании:\n{clean_context}\n\nВопрос: {clean_question}"
 
+    has_openrouter = bool(settings.openrouter_api_key)
+    has_yandex = bool(settings.yandex_gpt_api_key and settings.yandex_gpt_folder_id)
+
+    if not has_openrouter and not has_yandex:
+        result = {
+            "answer": _local_fallback_answer(clean_question, clean_context),
+            "provider": "local",
+            "cached": False,
+        }
+        _response_cache[cache_k] = result
+        return {**result, "cached": False}
+
     use_fallback = _should_use_fallback() or preferred_provider == "yandexgpt"
     provider: ProviderType
 
     try:
-        if use_fallback:
+        if use_fallback and has_yandex:
             answer = await _call_yandexgpt(prompt, system)
             provider = "yandexgpt"
-        else:
+        elif has_openrouter:
             answer = await _call_openrouter(prompt, system)
             provider = "openrouter"
-    except Exception:
-        if not use_fallback:
-            _record_openrouter_error()
+        elif has_yandex:
             answer = await _call_yandexgpt(prompt, system)
             provider = "yandexgpt"
         else:
-            raise
+            answer = _local_fallback_answer(clean_question, clean_context)
+            provider = "local"
+    except Exception:
+        if not use_fallback and has_yandex:
+            _record_openrouter_error()
+            try:
+                answer = await _call_yandexgpt(prompt, system)
+                provider = "yandexgpt"
+            except Exception:
+                answer = _local_fallback_answer(clean_question, clean_context)
+                provider = "local"
+        else:
+            answer = _local_fallback_answer(clean_question, clean_context)
+            provider = "local"
 
     result = {"answer": answer, "provider": provider, "cached": False}
     _response_cache[cache_k] = result

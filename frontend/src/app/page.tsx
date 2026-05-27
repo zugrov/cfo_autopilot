@@ -206,21 +206,20 @@ function TelegramModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+type ActivePanel = 'upload' | 'obligations' | 'transactions' | 'telegram' | 'ai' | 'team' | 'audit' | null
+
 export default function HomePage() {
   const [token, setToken] = useState<string | null>(null)
   const [user, setUser] = useState<UserMe | null>(null)
   const [data, setData] = useState<DashboardData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showUpload, setShowUpload] = useState(false)
-  const [showObligations, setShowObligations] = useState(false)
-  const [showTelegram, setShowTelegram] = useState(false)
-  const [showAiChat, setShowAiChat] = useState(false)
-  const [showTransactions, setShowTransactions] = useState(false)
-  const [showTeam, setShowTeam] = useState(false)
-  const [showAudit, setShowAudit] = useState(false)
+  const [activePanel, setActivePanel] = useState<ActivePanel>(null)
   const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null)
   const [isDownloadingReport, setIsDownloadingReport] = useState(false)
+
+  const openPanel = (panel: Exclude<ActivePanel, null>) => setActivePanel(panel)
+  const closePanel = () => setActivePanel(null)
 
   const canImport = user?.role !== 'viewer'
   const canEditObligations = user?.role !== 'viewer'
@@ -325,26 +324,26 @@ export default function HomePage() {
         <h1 className="text-base font-semibold text-neutral-900">Финансовый автопилот</h1>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => setShowTransactions(true)}
+            onClick={() => openPanel('transactions')}
             className="text-xs font-medium text-neutral-600 hover:text-neutral-900 transition-colors"
           >
             Операции
           </button>
           <button
-            onClick={() => setShowObligations(true)}
+            onClick={() => openPanel('obligations')}
             className="text-xs font-medium text-neutral-600 hover:text-neutral-900 transition-colors"
           >
             Обязательства
           </button>
           <button
-            onClick={() => setShowAiChat(true)}
+            onClick={() => openPanel('ai')}
             className="text-xs font-medium text-trust hover:text-trust-dark transition-colors"
           >
             Спросить
           </button>
           {canImport && (
           <button
-            onClick={() => setShowUpload(true)}
+            onClick={() => openPanel('upload')}
             className="text-xs font-medium text-trust hover:text-trust-dark transition-colors"
           >
             + Выписка
@@ -361,7 +360,7 @@ export default function HomePage() {
           )}
           {isOwner && (
           <button
-            onClick={() => setShowAudit(true)}
+            onClick={() => openPanel('audit')}
             className="text-xs font-medium text-neutral-600 hover:text-neutral-900 transition-colors"
           >
             Журнал
@@ -369,7 +368,7 @@ export default function HomePage() {
           )}
           {isOwner && (
           <button
-            onClick={() => setShowTeam(true)}
+            onClick={() => openPanel('team')}
             className="text-xs font-medium text-neutral-600 hover:text-neutral-900 transition-colors"
           >
             Команда
@@ -377,7 +376,7 @@ export default function HomePage() {
           )}
           {isOwner && (
           <button
-            onClick={() => setShowTelegram(true)}
+            onClick={() => openPanel('telegram')}
             className="text-xs text-neutral-400 hover:text-neutral-600 transition-colors"
             title="Настроить Telegram-дайджест"
           >
@@ -398,56 +397,56 @@ export default function HomePage() {
           <OnboardingBanner
             status={onboarding}
             isOwner={isOwner}
-            onUploadOneC={() => setShowUpload(true)}
-            onConnectTelegram={() => setShowTelegram(true)}
+            onUploadOneC={() => openPanel('upload')}
+            onConnectTelegram={() => openPanel('telegram')}
           />
         )}
         <DashboardView
           data={data}
           isLoading={isLoading}
           error={error}
-          onUploadClick={() => canImport && setShowUpload(true)}
-          onTransactionsClick={() => setShowTransactions(true)}
+          onUploadClick={() => canImport && openPanel('upload')}
+          onTransactionsClick={() => openPanel('transactions')}
           canImport={canImport}
         />
       </main>
 
-      {showUpload && (
+      {activePanel === 'upload' && (
         <UploadModal
           onSuccess={() => {
             fetchDashboard()
             fetchOnboarding()
           }}
-          onClose={() => setShowUpload(false)}
+          onClose={closePanel}
         />
       )}
 
-      {showObligations && (
+      {activePanel === 'obligations' && (
         <ObligationsPanel
-          onClose={() => setShowObligations(false)}
+          onClose={closePanel}
           onRefreshDashboard={fetchDashboard}
           canEdit={canEditObligations}
         />
       )}
 
-      {showTransactions && (
-        <TransactionsPanel onClose={() => setShowTransactions(false)} />
+      {activePanel === 'transactions' && (
+        <TransactionsPanel onClose={closePanel} />
       )}
 
-      {showTelegram && (
-        <TelegramModal onClose={() => setShowTelegram(false)} />
+      {activePanel === 'telegram' && (
+        <TelegramModal onClose={closePanel} />
       )}
 
-      {showAiChat && (
-        <AiChatPanel onClose={() => setShowAiChat(false)} />
+      {activePanel === 'ai' && (
+        <AiChatPanel onClose={closePanel} />
       )}
 
-      {showTeam && (
-        <TeamPanel onClose={() => setShowTeam(false)} />
+      {activePanel === 'team' && (
+        <TeamPanel onClose={closePanel} />
       )}
 
-      {showAudit && (
-        <AuditPanel onClose={() => setShowAudit(false)} />
+      {activePanel === 'audit' && (
+        <AuditPanel onClose={closePanel} />
       )}
     </>
   )

@@ -17,6 +17,24 @@ export function clearToken(): void {
   }
 }
 
+function formatApiError(detail: unknown): string {
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === 'object' && item !== null && 'msg' in item) {
+          return String((item as { msg: string }).msg)
+        }
+        return String(item)
+      })
+      .join('; ')
+  }
+  if (typeof detail === 'object' && detail !== null) {
+    if ('msg' in detail) return String((detail as { msg: string }).msg)
+  }
+  return 'API error'
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const token = getToken()
   const headers: HeadersInit = {
@@ -27,7 +45,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers })
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(error.detail ?? 'API error')
+    throw new Error(formatApiError(error.detail ?? res.statusText))
   }
   return res.json() as Promise<T>
 }
@@ -265,7 +283,7 @@ export const api = {
     })
     if (!res.ok) {
       const error = await res.json().catch(() => ({ detail: res.statusText }))
-      throw new Error(error.detail ?? 'Ошибка загрузки отчёта')
+      throw new Error(formatApiError(error.detail ?? 'Ошибка загрузки отчёта'))
     }
     return res.blob()
   },
