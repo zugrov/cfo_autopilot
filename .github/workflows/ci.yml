@@ -54,7 +54,7 @@ jobs:
         run: poetry install --no-interaction
 
       - name: Run unit tests
-        run: poetry run pytest tests/unit/ -v --tb=short
+        run: poetry run pytest ../tests/unit/ -v --tb=short
 
       - name: Run database migrations
         env:
