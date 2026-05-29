@@ -289,7 +289,9 @@ export function DashboardView({
 
   const baseMap = new Map((forecast?.days_preview ?? []).map((d) => [d.date, d.balance]))
   const stressMap = new Map((forecast?.days_stress ?? []).map((d) => [d.date, d.balance]))
-  const allDates = [...new Set([...baseMap.keys(), ...stressMap.keys()])].sort()
+  const allDates = Array.from(
+    new Set([...Array.from(baseMap.keys()), ...Array.from(stressMap.keys())])
+  ).sort()
 
   const chartData = allDates.map((date) => ({
     date: formatDate(date),
